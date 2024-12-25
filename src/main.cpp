@@ -1,6 +1,9 @@
 #include "raylib.h"
+#include "PxlsLogDB.h"
 
 int main() {
+    PxlsLogDB db;
+    db.OpenLogDB("../log_test/pixels.sanit.logdb");
     const int screenWidth = 800;
     const int screenHeight = 450;
     InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
