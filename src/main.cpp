@@ -1,19 +1,24 @@
 #include "raylib.h"
 #include "PxlsLogDB.h"
+#include "PxlsCanvas.h"
+
+constexpr int SCREEN_WIDTH = 1024;
+constexpr int SCREEN_HEIGHT = 768;
 
 int main() {
     PxlsLogDB db;
     db.OpenLogDB("../log_test/pixels.sanit.logdb");
-    const int screenWidth = 800;
-    const int screenHeight = 450;
-    InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
+    db.QueryDimension([](const unsigned w, const unsigned h) {std::cout << w << 'x' << h << std::endl;});
+
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib [core] example - basic window");
     SetTargetFPS(60);
 
+    PxlsCanvas canvas;
+    canvas.LoadPaletteFromJson("../log_test/palette.json");
     while (!WindowShouldClose())
     {
         BeginDrawing();
-        ClearBackground(RAYWHITE);
-        DrawText("Congrats! You created your first window!", 190, 200, 20, LIGHTGRAY);
+        canvas.Render();
         EndDrawing();
     }
     CloseWindow();

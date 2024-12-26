@@ -7,7 +7,7 @@
 bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
     std::ifstream file(filename);
-    auto db_path = std::filesystem::path(filename).replace_extension("logdb").generic_u8string();
+    auto db_path = std::filesystem::path(filename).replace_extension("logdb").generic_string();
     // delete old logdb and reconstruct it
     if (std::filesystem::exists(db_path) && !std::filesystem::is_directory(db_path))
         std::filesystem::remove(db_path);
@@ -31,9 +31,8 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
     std::string record_line;
     std::vector<std::string> record;
     const std::string insert_sql_prefix = "INSERT INTO log(date,hash,x,y,color_index,action) VALUES ";
-    std::stringstream sql_ss;
+    std::stringstream sql_ss { insert_sql_prefix };
     unsigned short int record_num = 0;
-    sql_ss << insert_sql_prefix;
     while (std::getline(file, record_line)) {
         split(record, record_line, boost::is_any_of("\t"));
         /*
@@ -46,7 +45,7 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
             return false;
         }
         record[0][record[0].rfind(',')] = '.'; // convert date to compatible format
-        // construct insert sql
+        // construct insert values
         sql_ss << "('" << record[0]
             << "','" << record[1]
             << "'," << record[2]
@@ -64,8 +63,7 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
                 return false;
             }
             record_num = 0;
-            sql_ss.str("");
-            sql_ss << insert_sql_prefix;
+            sql_ss.str(insert_sql_prefix);
         }
     }
     if (!sql_ss.str().empty()) {
@@ -91,6 +89,18 @@ void PxlsLogDB::CloseLogDB() {
     if (log_db)
         sqlite3_close(log_db);
     log_db = nullptr;
+}
+
+bool PxlsLogDB::QueryDimension(void (*callback)(unsigned width, unsigned height)) const {
+    if (!log_db) return false;
+    const std::string sql = "SELECT MAX(x),MAX(y) FROM log";
+    // pass the callback to the lambda function wrapper and invoke it inside
+    if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
+        reinterpret_cast<void (*)(unsigned, unsigned)>(cb)(std::stoul(argv[0]) + 1, std::stoul(argv[1]) + 1);
+        return 0;
+    }, reinterpret_cast<void*>(callback), nullptr) != SQLITE_OK)
+        return false;
+    return true;
 }
 
 PxlsLogDB::~PxlsLogDB() {
