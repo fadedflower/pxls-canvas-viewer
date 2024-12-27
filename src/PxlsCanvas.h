@@ -41,7 +41,7 @@ public:
     // load palette from a palette json
     bool LoadPaletteFromJson(const std::string &filename);
     // init canvas with specified dimension
-    bool InitCanvas(unsigned width, unsigned height);
+    bool InitCanvas(unsigned canvas_w, unsigned canvas_h, unsigned window_w, unsigned window_h);
     // get readonly access to palette
     const auto& Palette() { return palette; }
     // get readonly access to canvas
@@ -51,17 +51,33 @@ public:
     // perform action on the specified pixel, either forward or backward
     bool PerformAction(unsigned x, unsigned y, std::string time_str, std::string action, std::string hash,
         unsigned color_index, ActionDirection direction);
+    // get/set canvas view
+    void ViewCenter(Vector2 center);
+    const Vector2& ViewCenter() const { return view_center; }
+    void Scale(float s);
+    float Scale() const { return scale; }
     // render canvas using raylib
     void Render();
-private:
     // background color of the canvas
     const Color BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
     // pixel color used when the palette is empty or the color index is out of range
     const Color FALLBACK_PIXEL_COLOR { WHITE };
+    // scale limit
+    const float MAX_SCALE = 50.0f;
+    const float MIN_SCALE = 1.0f;
+private:
+    // palette
     std::vector<PxlsCanvasColor> palette;
+    // canvas
     std::vector<std::vector<PxlsCanvasPixel>> canvas;
     // canvas dimension
     unsigned canvas_width { 0 }, canvas_height { 0 };
+    // window dimension
+    unsigned window_width { 0 }, window_height { 0 };
+    // center position of the canvas view in the canvas
+    Vector2 view_center { 0.0, 0.0 };
+    // scale of the view, it is actually the width of pixel
+    float scale { 1.0f };
 };
 
 #endif //PXLSCANVAS_H

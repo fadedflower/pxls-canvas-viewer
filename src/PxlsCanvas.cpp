@@ -36,10 +36,11 @@ bool PxlsCanvas::LoadPaletteFromJson(const std::string &filename) {
     return true;
 }
 
-bool PxlsCanvas::InitCanvas(unsigned width, unsigned height) {
-    if (width == 0 || height == 0) return false;
-    canvas = std::vector(width, std::vector(height, PxlsCanvasPixel()));
-    canvas_width = width; canvas_height = height;
+bool PxlsCanvas::InitCanvas(unsigned canvas_w, unsigned canvas_h, unsigned window_w, unsigned window_h) {
+    if (canvas_w == 0 || canvas_h == 0 || window_w == 0 || window_h == 0) return false;
+    canvas = std::vector(canvas_w, std::vector(canvas_h, PxlsCanvasPixel()));
+    canvas_width = canvas_w; canvas_height = canvas_h; window_width = window_w; window_height = window_h;
+    view_center = Vector2 { canvas_width / 2.0f, canvas_height / 2.0f };
     return true;
 }
 
@@ -63,6 +64,64 @@ bool PxlsCanvas::PerformAction(unsigned x, unsigned y, std::string time_str, std
     return true;
 }
 
+void PxlsCanvas::ViewCenter(Vector2 center) {
+    center.x = std::clamp(center.x, 0.0f, static_cast<float>(canvas_width));
+    center.y = std::clamp(center.y, 0.0f, static_cast<float>(canvas_height));
+    view_center = center;
+}
+
+void PxlsCanvas::Scale(float s) {
+    scale = std::clamp(s, MIN_SCALE, MAX_SCALE);
+}
+
 void PxlsCanvas::Render() {
     ClearBackground(BACKGROUND_COLOR);
+    // calc the position of the center pixel in the canvas
+    unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
+    unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
+    // calc the position of the upper left corner of the center pixel in the window
+    Vector2 window_view_center = {
+        window_width / 2 - (view_center.x - canvas_view_center_x) * scale,
+        window_height / 2 - (view_center.y - canvas_view_center_y) * scale
+    };
+    // view rect offset relative to center in all directions
+    unsigned canvas_offset_left = std::ceilf(window_view_center.x / scale);
+    unsigned canvas_offset_top = std::ceilf(window_view_center.y / scale);
+    unsigned canvas_offset_right = std::floorf((window_width - window_view_center.x) / scale);
+    unsigned canvas_offset_bottom = std::floorf((window_height - window_view_center.y) / scale);
+    // the position of the upper left corner pixel in the canvas view
+    unsigned canvas_view_origin_x, canvas_view_origin_y;
+    // the dimension of the canvas view
+    unsigned canvas_view_width, canvas_view_height;
+    if (canvas_offset_left > canvas_view_center_x)
+        canvas_view_origin_x = 0;
+    else
+        canvas_view_origin_x = canvas_view_center_x - canvas_offset_left;
+    if (canvas_offset_top > canvas_view_center_y)
+        canvas_view_origin_y = 0;
+    else
+        canvas_view_origin_y = canvas_view_center_y - canvas_offset_top;
+    canvas_view_width = canvas_view_center_x - canvas_view_origin_x +
+        std::min(canvas_width - 1 - canvas_view_center_x, canvas_offset_right) + 1;
+    canvas_view_height = canvas_view_center_y - canvas_view_origin_y +
+        std::min(canvas_height - 1 - canvas_view_center_y, canvas_offset_bottom) + 1;
+    Vector2 window_view_origin = {
+        window_view_center.x - (canvas_view_center_x - canvas_view_origin_x) * scale,
+        window_view_center.y - (canvas_view_center_y - canvas_view_origin_y) * scale
+    };
+    for (unsigned x = 0; x < canvas_view_width; x++) {
+        for (unsigned y = 0; y < canvas_view_height; y++) {
+            // optimization for 1.0f scale
+            if (scale == 1.0f) {
+                DrawPixelV(Vector2 { window_view_origin.x + x, window_view_origin.y + y },
+                    GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
+            }
+            else {
+                DrawRectangleRec(Rectangle {
+                        window_view_origin.x + x * scale, window_view_origin.y + y * scale,
+                        scale, scale
+                    }, GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
+            }
+        }
+    }
 }
