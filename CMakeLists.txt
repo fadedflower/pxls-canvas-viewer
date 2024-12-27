@@ -32,6 +32,10 @@ target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json)
 add_subdirectory(third_party/date)
 target_link_libraries(${PROJECT_NAME} PRIVATE date)
 
+include_directories(third_party/raygui/src)
+# copy dark style file
+file(COPY_FILE ${CMAKE_SOURCE_DIR}/third_party/raygui/styles/dark/style_dark.rgs ${CMAKE_BINARY_DIR}/style.rgs)
+
 # Checks if OSX and links appropriate frameworks (Only required on MacOS)
 if (APPLE)
     target_link_libraries(${PROJECT_NAME} PRIVATE "-framework IOKit")

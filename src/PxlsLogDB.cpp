@@ -125,41 +125,42 @@ bool PxlsLogDB::QueryLogDBMetadata() {
 }
 
 bool PxlsLogDB::QueryRecords(unsigned long dest_id, void (*callback)(std::string date, std::string hash,
-    unsigned x, unsigned y, unsigned color_index, std::string action, int direction)) {
+    unsigned x, unsigned y, unsigned color_index, std::string action, QueryDirection direction)) {
 
     if (dest_id > db_record_count) return false;
     dest_id = dest_id == 0 ? 1 : dest_id;
-    if (dest_id == current_id) return true;
+    if (callback == nullptr || dest_id == current_id) {
+        current_id = dest_id;
+        return true;
+    }
     if (dest_id > current_id) {
-        std::stringstream sql_ss;
-        sql_ss << "SELECT date,hash,x,y,color_index,action FROM log WHERE id >"
-            << current_id << " and id <= " << dest_id << ';';
-        if (sqlite3_exec(log_db, sql_ss.str().c_str(), [](void* cb, int, char **argv, char**) -> int {
-            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, int)>(cb)(
+        std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
+                                    "FROM log WHERE id > {} and id <= {};", current_id, dest_id);
+        if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
+            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, QueryDirection)>(cb)(
                 argv[0],
                 argv[1],
                 std::stoul(argv[2]),
                 std::stoul(argv[3]),
                 std::stoul(argv[4]),
                 argv[5],
-                1
+                FORWARD
             );
             return 0;
         }, reinterpret_cast<void*>(callback), nullptr) != SQLITE_OK)
             return false;
-    }
-    else {
-        std::stringstream sql_ss { "SELECT date,hash,x,y,color_index,action FROM log WHERE id >= " };
-        sql_ss << dest_id << " and id < " << current_id << "ORDER BY id DESC;";
-        if (sqlite3_exec(log_db, sql_ss.str().c_str(), [](void* cb, int, char **argv, char**) -> int {
-            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, int)>(cb)(
+    } else {
+        std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
+                                    "FROM log WHERE id >= {} and id < {};", dest_id, current_id);
+        if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
+            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, QueryDirection)>(cb)(
                 argv[0],
                 argv[1],
                 std::stoul(argv[2]),
                 std::stoul(argv[3]),
                 std::stoul(argv[4]),
                 argv[5],
-                -1
+                BACKWARD
             );
             return 0;
         }, reinterpret_cast<void*>(callback), nullptr) != SQLITE_OK)

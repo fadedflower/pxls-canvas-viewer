@@ -4,6 +4,11 @@
 
 #include "PxlsCanvas.h"
 
+const Color PxlsCanvas::BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
+const Color PxlsCanvas::FALLBACK_PIXEL_COLOR { WHITE };
+const float PxlsCanvas::MAX_SCALE = 50.0f;
+const float PxlsCanvas::MIN_SCALE = 1.0f;
+
 bool PxlsCanvas::LoadPaletteFromJson(const std::string &filename) {
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
     std::ifstream palette_file(filename);
@@ -49,14 +54,19 @@ Color PxlsCanvas::GetPaletteColor(unsigned color_index) const {
     return palette[color_index].color;
 }
 
+std::string PxlsCanvas::GetPaletteColorName(unsigned color_index) const {
+    if (color_index >= palette.size()) return "<fallback>";
+    return palette[color_index].name;
+}
+
 bool PxlsCanvas::PerformAction(unsigned x, unsigned y, std::string time_str, std::string action, std::string hash,
     unsigned color_index, ActionDirection direction) {
     if (x >= canvas_width || y >= canvas_height) return false;
     auto &px = canvas[x][y];
     sys_time_ms last_time;
-    std::istringstream { time_str } >> date::parse("%F &T", last_time);
+    std::istringstream { time_str } >> date::parse("%F %T", last_time);
     unsigned new_manipulation_count = canvas[x][y].manipulate_count;
-    if (direction == FORWARD)
+    if (direction == REDO)
         new_manipulation_count++;
     else
         new_manipulation_count = std::min(new_manipulation_count - 1, new_manipulation_count);
@@ -74,7 +84,46 @@ void PxlsCanvas::Scale(float s) {
     scale = std::clamp(s, MIN_SCALE, MAX_SCALE);
 }
 
-void PxlsCanvas::Render() {
+bool PxlsCanvas::Highlight(unsigned x, unsigned y) {
+    if (x >= canvas_width || y >= canvas_height) return false;
+    do_highlight = true;
+    highlight_x = x; highlight_y = y;
+}
+
+void PxlsCanvas::DeHighlight() {
+    do_highlight = false;
+    highlight_x = highlight_y = 0;
+}
+
+bool PxlsCanvas::GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const {
+    if (window_pos.x > window_width || window_pos.y > window_height || window_pos.x < 0 || window_pos.y < 0)
+        return false;
+    // calc the position of the center pixel in the canvas
+    unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
+    unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
+    // calc the position of the upper left of the center pixel in the window
+    Vector2 window_view_center = {
+        window_width / 2 - (view_center.x - canvas_view_center_x) * scale,
+        window_height / 2 - (view_center.y - canvas_view_center_y) * scale
+    };
+    // pos offset relative to the upper left of the center pixel in the window
+    Vector2 window_pos_offset = {
+        window_pos.x - window_view_center.x,
+        window_pos.y - window_view_center.y
+    };
+    // check if out of range
+    if (window_pos_offset.x < 0 && -std::floorf(window_pos_offset.x / scale) > canvas_view_center_x) return false;
+    if (window_pos_offset.y < 0 && -std::floorf(window_pos_offset.y / scale) > canvas_view_center_y) return false;
+    if (window_pos_offset.x > 0 && canvas_view_center_x + std::floorf(window_pos_offset.x / scale) >= canvas_width)
+        return false;
+    if (window_pos_offset.y > 0 && canvas_view_center_y + std::floorf(window_pos_offset.y / scale) >= canvas_height)
+        return false;
+    canvas_x = canvas_view_center_x + std::floorf(window_pos_offset.x / scale);
+    canvas_y = canvas_view_center_y + std::floorf(window_pos_offset.y / scale);
+    return true;
+}
+
+void PxlsCanvas::Render() const {
     ClearBackground(BACKGROUND_COLOR);
     // calc the position of the center pixel in the canvas
     unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
@@ -115,12 +164,17 @@ void PxlsCanvas::Render() {
             if (scale == 1.0f) {
                 DrawPixelV(Vector2 { window_view_origin.x + x, window_view_origin.y + y },
                     GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
-            }
-            else {
+            } else {
                 DrawRectangleRec(Rectangle {
                         window_view_origin.x + x * scale, window_view_origin.y + y * scale,
                         scale, scale
                     }, GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
+                if (do_highlight && highlight_x == canvas_view_origin_x + x && highlight_y == canvas_view_origin_y + y) {
+                    DrawRectangleLinesEx(Rectangle {
+                        window_view_origin.x + x * scale, window_view_origin.y + y * scale,
+                        scale, scale
+                    }, 1.5f, BLACK);
+                }
             }
         }
     }

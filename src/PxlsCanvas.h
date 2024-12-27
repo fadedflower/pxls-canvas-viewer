@@ -34,7 +34,7 @@ struct PxlsCanvasPixel {
     unsigned color_index { 0 };
 };
 
-enum ActionDirection { FORWARD, BACKWARD };
+enum ActionDirection { REDO, UNDO };
 
 class PxlsCanvas {
 public:
@@ -43,12 +43,14 @@ public:
     // init canvas with specified dimension
     bool InitCanvas(unsigned canvas_w, unsigned canvas_h, unsigned window_w, unsigned window_h);
     // get readonly access to palette
-    const auto& Palette() { return palette; }
+    const auto& Palette() const { return palette; }
     // get readonly access to canvas
-    const auto& Canvas() { return canvas; }
+    const auto& Canvas() const { return canvas; }
     // get palette color by color index
     Color GetPaletteColor(unsigned color_index) const;
-    // perform action on the specified pixel, either forward or backward
+    // get palette color name by color index
+    std::string GetPaletteColorName(unsigned color_index) const;
+    // perform action on the specified pixel, either redo or undo, return false if out of bounds
     bool PerformAction(unsigned x, unsigned y, std::string time_str, std::string action, std::string hash,
         unsigned color_index, ActionDirection direction);
     // get/set canvas view
@@ -56,15 +58,20 @@ public:
     const Vector2& ViewCenter() const { return view_center; }
     void Scale(float s);
     float Scale() const { return scale; }
+    // highlight and de-highlight a pixel
+    bool Highlight(unsigned x, unsigned y);
+    void DeHighlight();
+    // given a position in the window, calc the position of the nearest pixel in the canvas, return false if out of bounds
+    bool GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const;
     // render canvas using raylib
-    void Render();
+    void Render() const;
     // background color of the canvas
-    const Color BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
+    const static Color BACKGROUND_COLOR;
     // pixel color used when the palette is empty or the color index is out of range
-    const Color FALLBACK_PIXEL_COLOR { WHITE };
+    const static Color FALLBACK_PIXEL_COLOR;
     // scale limit
-    const float MAX_SCALE = 50.0f;
-    const float MIN_SCALE = 1.0f;
+    const static float MAX_SCALE;
+    const static float MIN_SCALE;
 private:
     // palette
     std::vector<PxlsCanvasColor> palette;
@@ -78,6 +85,9 @@ private:
     Vector2 view_center { 0.0, 0.0 };
     // scale of the view, it is actually the width of pixel
     float scale { 1.0f };
+    // highlight pixel info
+    bool do_highlight { false };
+    unsigned highlight_x { 0 }, highlight_y { 0 };
 };
 
 #endif //PXLSCANVAS_H

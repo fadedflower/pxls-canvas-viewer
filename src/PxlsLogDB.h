@@ -9,8 +9,11 @@
 #include <fstream>
 #include <filesystem>
 #include <sstream>
+#include <format>
 #include <sqlite3.h>
 #include <boost/algorithm/string.hpp>
+
+enum QueryDirection { FORWARD, BACKWARD };
 
 class PxlsLogDB {
 public:
@@ -26,7 +29,7 @@ public:
     unsigned long RecordCount() const { return db_record_count; }
     // query records, from current_id to dest_id
     bool QueryRecords(unsigned long dest_id, void (*callback)(std::string date, std::string hash,
-        unsigned x, unsigned y, unsigned color_index, std::string action, int direction));
+        unsigned x, unsigned y, unsigned color_index, std::string action, QueryDirection direction));
     // adjust current id pointer
     bool Seek(unsigned long id);
     // get current id pointer
