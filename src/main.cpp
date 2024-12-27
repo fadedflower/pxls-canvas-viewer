@@ -4,7 +4,6 @@
 #include "PxlsLogDB.h"
 #include "PxlsCanvas.h"
 #include "PxlsOverlay.h"
-#include "../../../../../Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk/System/Library/Frameworks/CoreGraphics.framework/Headers/CGPDFDictionary.h"
 
 constexpr unsigned SCREEN_WIDTH = 1024;
 constexpr unsigned SCREEN_HEIGHT = 768;
@@ -13,7 +12,6 @@ constexpr unsigned char OVERLAY_ALPHA = 204;
 PxlsLogDB db;
 PxlsCanvas canvas;
 PxlsInfoPanel info_panel(SCREEN_WIDTH, SCREEN_HEIGHT);
-bool canvas_move_mode = false;
 
 int main() {
     db.OpenLogDB("../log_test/pixels.sanit.logdb");
