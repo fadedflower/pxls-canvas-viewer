@@ -9,6 +9,7 @@
 #include <fstream>
 #include <chrono>
 #include <sstream>
+#include <optional>
 #include "raylib.h"
 #include "nlohmann/json.hpp"
 #include "date/date.h"
@@ -42,6 +43,8 @@ public:
     bool LoadPaletteFromJson(const std::string &filename);
     // init canvas with specified dimension
     bool InitCanvas(unsigned canvas_w, unsigned canvas_h, unsigned window_w, unsigned window_h);
+    // clear canvas with virgin pixels
+    void ClearCanvas();
     // get readonly access to palette
     const auto& Palette() const { return palette; }
     // get readonly access to canvas
@@ -51,8 +54,8 @@ public:
     // get palette color name by color index
     std::string GetPaletteColorName(unsigned color_index) const;
     // perform action on the specified pixel, either redo or undo, return false if out of bounds
-    bool PerformAction(unsigned x, unsigned y, std::string time_str, std::string action, std::string hash,
-        unsigned color_index, ActionDirection direction);
+    bool PerformAction(unsigned x, unsigned y, ActionDirection direction, std::optional<std::string> time_str,
+                    const std::optional<std::string> &action, const std::optional<std::string> &hash, const std::optional<unsigned> &color_index);
     // get/set canvas view
     void ViewCenter(Vector2 center);
     const Vector2& ViewCenter() const { return view_center; }
@@ -64,7 +67,7 @@ public:
     // given a position in the window, calc the position of the nearest pixel in the canvas, return false if out of bounds
     bool GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const;
     // render canvas using raylib
-    void Render() const;
+    void Render();
     // background color of the canvas
     const static Color BACKGROUND_COLOR;
     // pixel color used when the palette is empty or the color index is out of range

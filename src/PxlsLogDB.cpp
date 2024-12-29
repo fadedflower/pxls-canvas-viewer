@@ -15,27 +15,39 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
     sqlite3 *new_log_db = nullptr;
     if (sqlite3_open_v2(db_path.c_str(), &new_log_db,
         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) return false;
+    // enable foreign kes
+    if (sqlite3_exec(new_log_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_close(new_log_db);
+        std::filesystem::remove(db_path);
+        return false;
+    }
     // init logdb by creating the log table
     const std::string init_sql  = "CREATE TABLE log("
                             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                            "prev_id INTEGER,"
                             "date TEXT NOT NULL,"
                             "hash TEXT NOT NULL,"
                             "x INTEGER NOT NULL,"
                             "y INTEGER NOT NULL,"
                             "color_index INTEGER NOT NULL,"
-                            "action TEXT NOT NULL"
+                            "action TEXT NOT NULL,"
+                            "FOREIGN KEY (prev_id) REFERENCES log(id)"
                             ");";
     if (sqlite3_exec(new_log_db, init_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
         sqlite3_close(new_log_db);
         std::filesystem::remove(db_path);
         return false;
     }
+    // store previous record id
+    std::map<std::pair<unsigned, unsigned>, unsigned long> prev_id_map;
     std::string record_line;
     std::vector<std::string> record;
-    const std::string insert_sql_prefix = "INSERT INTO log(date,hash,x,y,color_index,action) VALUES ";
+    const std::string insert_sql_prefix = "INSERT INTO log(date,hash,x,y,color_index,action,prev_id) VALUES ";
     std::stringstream sql_ss;
     sql_ss << insert_sql_prefix;
-    unsigned short int record_num = 0;
+    unsigned long record_id = 1;
+    unsigned short record_num = 0;
+    unsigned record_x, record_y;
     while (std::getline(file, record_line)) {
         split(record, record_line, boost::is_any_of("\t"));
         /*
@@ -55,10 +67,27 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
             << ',' << record[3]
             << ',' << record[4]
             << ",'" << record[5]
-            << "'),";
+            << "',";
+        // fetch
+        try {
+            record_x = std::stoul(record[2]);
+            record_y = std::stoul(record[3]);
+        }
+        catch (std::invalid_argument&) {
+            sqlite3_close(new_log_db);
+            std::filesystem::remove(db_path);
+            return false;
+        }
+        if (prev_id_map.contains(std::make_pair(record_x, record_y)))
+            sql_ss << prev_id_map[std::make_pair(record_x, record_y)];
+        else
+            sql_ss << "NULL";
+        sql_ss << "),";
+        // update prev_id_map
+        prev_id_map[std::make_pair(record_x, record_y)] = record_id++;
         // insert INSERT_RECORDS_MAX_COUNT of records a time
         if (++record_num == INSERT_RECORDS_MAX_COUNT) {
-            std::string insert_sql(sql_ss.str());
+            std::string insert_sql { sql_ss.str() };
             insert_sql.back() = ';';
             if (sqlite3_exec(new_log_db, insert_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
                 sqlite3_close(new_log_db);
@@ -71,7 +100,7 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
         }
     }
     if (!sql_ss.str().empty()) {
-        std::string insert_sql(sql_ss.str());
+        std::string insert_sql { sql_ss.str() };
         insert_sql.back() = ';';
         if (sqlite3_exec(new_log_db, insert_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
             sqlite3_close(new_log_db);
@@ -104,7 +133,7 @@ void PxlsLogDB::CloseLogDB() {
     if (log_db)
         sqlite3_close(log_db);
     log_db = nullptr;
-    current_id = 1ul;
+    current_id = 0;
     db_width = db_height = 0;
     db_record_count = 0ul;
 }
@@ -112,9 +141,8 @@ void PxlsLogDB::CloseLogDB() {
 bool PxlsLogDB::QueryLogDBMetadata() {
     if (!log_db) return false;
     const std::string sql = "SELECT MAX(x),MAX(y),COUNT(*) FROM log";
-    // pass the callback to the lambda function wrapper and invoke it inside
     if (sqlite3_exec(log_db, sql.c_str(), [](void* db_ptr, int, char **argv, char**) -> int {
-        auto *db = reinterpret_cast<PxlsLogDB*>(db_ptr);
+        auto *db = static_cast<PxlsLogDB*>(db_ptr);
         db->db_width = std::stoul(argv[0]) + 1;
         db->db_height = std::stoul(argv[1]) + 1;
         db->db_record_count = std::stoul(argv[2]);
@@ -124,11 +152,9 @@ bool PxlsLogDB::QueryLogDBMetadata() {
     return true;
 }
 
-bool PxlsLogDB::QueryRecords(unsigned long dest_id, void (*callback)(std::string date, std::string hash,
-    unsigned x, unsigned y, unsigned color_index, std::string action, QueryDirection direction)) {
+bool PxlsLogDB::QueryRecords(unsigned long dest_id, record_query_callback callback) {
 
     if (dest_id > db_record_count) return false;
-    dest_id = dest_id == 0 ? 1 : dest_id;
     if (callback == nullptr || dest_id == current_id) {
         current_id = dest_id;
         return true;
@@ -137,7 +163,7 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, void (*callback)(std::string
         std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
                                     "FROM log WHERE id > {} and id <= {};", current_id, dest_id);
         if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
-            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, QueryDirection)>(cb)(
+            (*static_cast<record_query_callback*>(cb))(
                 argv[0],
                 argv[1],
                 std::stoul(argv[2]),
@@ -147,23 +173,24 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, void (*callback)(std::string
                 FORWARD
             );
             return 0;
-        }, reinterpret_cast<void*>(callback), nullptr) != SQLITE_OK)
+        }, &callback, nullptr) != SQLITE_OK)
             return false;
     } else {
-        std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
-                                    "FROM log WHERE id >= {} and id < {};", dest_id, current_id);
+        std::string sql = std::format("SELECT prev_log.date,prev_log.hash,cur_log.x,cur_log.y,prev_log.color_index,prev_log.action "
+                                    "FROM log cur_log LEFT JOIN log prev_log ON cur_log.prev_id = prev_log.id "
+                                    "WHERE cur_log.id > {} and cur_log.id <= {} ORDER BY cur_log.id DESC;", dest_id, current_id);
         if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
-            reinterpret_cast<void (*)(std::string, std::string, unsigned, unsigned, unsigned, std::string, QueryDirection)>(cb)(
-                argv[0],
-                argv[1],
+            (*static_cast<record_query_callback*>(cb))(
+                argv[0] ? std::make_optional(argv[0]) : std::nullopt,
+                argv[1] ? std::make_optional(argv[1]) : std::nullopt,
                 std::stoul(argv[2]),
                 std::stoul(argv[3]),
-                std::stoul(argv[4]),
-                argv[5],
+                argv[4] ? std::make_optional(std::stoul(argv[4])) : std::nullopt,
+                argv[5] ? std::make_optional(argv[5]) : std::nullopt,
                 BACKWARD
             );
             return 0;
-        }, reinterpret_cast<void*>(callback), nullptr) != SQLITE_OK)
+        }, &callback, nullptr) != SQLITE_OK)
             return false;
     }
     current_id = dest_id;
@@ -172,7 +199,7 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, void (*callback)(std::string
 
 bool PxlsLogDB::Seek(unsigned long id) {
     if (id > db_record_count) return false;
-    current_id = id == 0 ? 1 : id;
+    current_id = id;
     return true;
 }
 

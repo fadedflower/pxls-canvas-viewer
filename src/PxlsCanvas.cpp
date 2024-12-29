@@ -35,42 +35,53 @@ bool PxlsCanvas::LoadPaletteFromJson(const std::string &filename) {
         }
         catch (std::invalid_argument&) { return false; }
         palette_color.a = 255;
-        new_palette.push_back(PxlsCanvasColor { name, palette_color });
+        new_palette.push_back({ name, palette_color });
     }
     palette = new_palette;
     return true;
 }
 
-bool PxlsCanvas::InitCanvas(unsigned canvas_w, unsigned canvas_h, unsigned window_w, unsigned window_h) {
+bool PxlsCanvas::InitCanvas(const unsigned canvas_w, const unsigned canvas_h, const unsigned window_w, const unsigned window_h) {
     if (canvas_w == 0 || canvas_h == 0 || window_w == 0 || window_h == 0) return false;
-    canvas = std::vector(canvas_w, std::vector(canvas_h, PxlsCanvasPixel()));
     canvas_width = canvas_w; canvas_height = canvas_h; window_width = window_w; window_height = window_h;
-    view_center = Vector2 { canvas_width / 2.0f, canvas_height / 2.0f };
+    view_center = { canvas_width / 2.0f, canvas_height / 2.0f };
+    ClearCanvas();
     return true;
 }
 
-Color PxlsCanvas::GetPaletteColor(unsigned color_index) const {
+void PxlsCanvas::ClearCanvas() {
+    canvas = std::vector(canvas_width, std::vector(canvas_height, PxlsCanvasPixel()));
+}
+
+Color PxlsCanvas::GetPaletteColor(const unsigned color_index) const {
     if (color_index >= palette.size()) return FALLBACK_PIXEL_COLOR;
     return palette[color_index].color;
 }
 
-std::string PxlsCanvas::GetPaletteColorName(unsigned color_index) const {
+std::string PxlsCanvas::GetPaletteColorName(const unsigned color_index) const {
     if (color_index >= palette.size()) return "<fallback>";
     return palette[color_index].name;
 }
 
-bool PxlsCanvas::PerformAction(unsigned x, unsigned y, std::string time_str, std::string action, std::string hash,
-    unsigned color_index, ActionDirection direction) {
+bool PxlsCanvas::PerformAction(const unsigned x, const unsigned y, const ActionDirection direction, std::optional<std::string> time_str,
+                const std::optional<std::string> &action, const std::optional<std::string> &hash, const std::optional<unsigned> &color_index) {
     if (x >= canvas_width || y >= canvas_height) return false;
-    auto &px = canvas[x][y];
     sys_time_ms last_time;
-    std::istringstream { time_str } >> date::parse("%F %T", last_time);
-    unsigned new_manipulation_count = canvas[x][y].manipulate_count;
-    if (direction == REDO)
-        new_manipulation_count++;
-    else
-        new_manipulation_count = std::min(new_manipulation_count - 1, new_manipulation_count);
-    canvas[x][y] = PxlsCanvasPixel { new_manipulation_count, last_time, action, hash, color_index };
+    std::istringstream { time_str ? *time_str : "1972-01-01 00:00:00.000" } >> date::parse("%F %T", last_time);
+    unsigned new_manipulate_count = canvas[x][y].manipulate_count;
+    if (direction == REDO) {
+        new_manipulate_count++;
+    }
+    else {
+        if (new_manipulate_count != 0)
+            new_manipulate_count--;
+        // revert to virgin pixel
+        if (new_manipulate_count == 0) {
+            canvas[x][y] = PxlsCanvasPixel();
+            return true;
+        }
+    }
+    canvas[x][y] = { new_manipulate_count, last_time, *action, *hash, *color_index };
     return true;
 }
 
@@ -80,14 +91,15 @@ void PxlsCanvas::ViewCenter(Vector2 center) {
     view_center = center;
 }
 
-void PxlsCanvas::Scale(float s) {
+void PxlsCanvas::Scale(const float s) {
     scale = std::clamp(s, MIN_SCALE, MAX_SCALE);
 }
 
-bool PxlsCanvas::Highlight(unsigned x, unsigned y) {
+bool PxlsCanvas::Highlight(const unsigned x, const unsigned y) {
     if (x >= canvas_width || y >= canvas_height) return false;
     do_highlight = true;
     highlight_x = x; highlight_y = y;
+    return true;
 }
 
 void PxlsCanvas::DeHighlight() {
@@ -95,19 +107,19 @@ void PxlsCanvas::DeHighlight() {
     highlight_x = highlight_y = 0;
 }
 
-bool PxlsCanvas::GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const {
+bool PxlsCanvas::GetNearestPixelPos(const Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const {
     if (window_pos.x > window_width || window_pos.y > window_height || window_pos.x < 0 || window_pos.y < 0)
         return false;
     // calc the position of the center pixel in the canvas
-    unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
-    unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
+    const unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
+    const unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
     // calc the position of the upper left of the center pixel in the window
-    Vector2 window_view_center = {
+    const Vector2 window_view_center = {
         window_width / 2 - (view_center.x - canvas_view_center_x) * scale,
         window_height / 2 - (view_center.y - canvas_view_center_y) * scale
     };
     // pos offset relative to the upper left of the center pixel in the window
-    Vector2 window_pos_offset = {
+    const Vector2 window_pos_offset = {
         window_pos.x - window_view_center.x,
         window_pos.y - window_view_center.y
     };
@@ -123,25 +135,44 @@ bool PxlsCanvas::GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsi
     return true;
 }
 
-void PxlsCanvas::Render() const {
+void PxlsCanvas::Render(){
+    // respond to mouse input
+    Scale(Scale() + GetMouseWheelMove() / 3.0f);
+    // right click or middle click to move view
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT) || IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+        SetMouseCursor(MOUSE_CURSOR_RESIZE_ALL);
+        auto mouse_move_delta = GetMouseDelta();
+        mouse_move_delta = { mouse_move_delta.x / Scale(), mouse_move_delta.y / Scale()};
+        const auto [view_center_x, view_center_y] = ViewCenter();
+        ViewCenter(Vector2 { view_center_x - mouse_move_delta.x, view_center_y - mouse_move_delta.y });
+    }
+    else {
+        SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+    }
+    // highlight selected pixel
+    unsigned highlight_x, highlight_y;
+    if (GetNearestPixelPos(GetMousePosition(), highlight_x, highlight_y))
+        Highlight(highlight_x, highlight_y);
+    else
+        DeHighlight();
+    // do the actual rendering
     ClearBackground(BACKGROUND_COLOR);
     // calc the position of the center pixel in the canvas
-    unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
-    unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
+    const unsigned canvas_view_center_x = std::min(std::floorf(view_center.x), canvas_width - 1.0f);
+    const unsigned canvas_view_center_y = std::min(std::floorf(view_center.y), canvas_height - 1.0f);
     // calc the position of the upper left corner of the center pixel in the window
-    Vector2 window_view_center = {
+    const Vector2 window_view_center = {
         window_width / 2 - (view_center.x - canvas_view_center_x) * scale,
         window_height / 2 - (view_center.y - canvas_view_center_y) * scale
     };
     // view rect offset relative to center in all directions
-    unsigned canvas_offset_left = std::ceilf(window_view_center.x / scale);
-    unsigned canvas_offset_top = std::ceilf(window_view_center.y / scale);
-    unsigned canvas_offset_right = std::floorf((window_width - window_view_center.x) / scale);
-    unsigned canvas_offset_bottom = std::floorf((window_height - window_view_center.y) / scale);
+    const unsigned canvas_offset_left = std::ceilf(window_view_center.x / scale);
+    const unsigned canvas_offset_top = std::ceilf(window_view_center.y / scale);
+    const unsigned canvas_offset_right = std::floorf((window_width - window_view_center.x) / scale);
+    const unsigned canvas_offset_bottom = std::floorf((window_height - window_view_center.y) / scale);
     // the position of the upper left corner pixel in the canvas view
     unsigned canvas_view_origin_x, canvas_view_origin_y;
     // the dimension of the canvas view
-    unsigned canvas_view_width, canvas_view_height;
     if (canvas_offset_left > canvas_view_center_x)
         canvas_view_origin_x = 0;
     else
@@ -150,11 +181,11 @@ void PxlsCanvas::Render() const {
         canvas_view_origin_y = 0;
     else
         canvas_view_origin_y = canvas_view_center_y - canvas_offset_top;
-    canvas_view_width = canvas_view_center_x - canvas_view_origin_x +
-        std::min(canvas_width - 1 - canvas_view_center_x, canvas_offset_right) + 1;
-    canvas_view_height = canvas_view_center_y - canvas_view_origin_y +
-        std::min(canvas_height - 1 - canvas_view_center_y, canvas_offset_bottom) + 1;
-    Vector2 window_view_origin = {
+    const unsigned canvas_view_width = canvas_view_center_x - canvas_view_origin_x +
+                                 std::min(canvas_width - 1 - canvas_view_center_x, canvas_offset_right) + 1;
+    const unsigned canvas_view_height = canvas_view_center_y - canvas_view_origin_y +
+                                  std::min(canvas_height - 1 - canvas_view_center_y, canvas_offset_bottom) + 1;
+    const Vector2 window_view_origin = {
         window_view_center.x - (canvas_view_center_x - canvas_view_origin_x) * scale,
         window_view_center.y - (canvas_view_center_y - canvas_view_origin_y) * scale
     };
@@ -162,15 +193,15 @@ void PxlsCanvas::Render() const {
         for (unsigned y = 0; y < canvas_view_height; y++) {
             // optimization for 1.0f scale
             if (scale == 1.0f) {
-                DrawPixelV(Vector2 { window_view_origin.x + x, window_view_origin.y + y },
+                DrawPixelV({ window_view_origin.x + x, window_view_origin.y + y },
                     GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
             } else {
-                DrawRectangleRec(Rectangle {
+                DrawRectangleRec({
                         window_view_origin.x + x * scale, window_view_origin.y + y * scale,
                         scale, scale
                     }, GetPaletteColor(canvas[canvas_view_origin_x + x][canvas_view_origin_y + y].color_index));
                 if (do_highlight && highlight_x == canvas_view_origin_x + x && highlight_y == canvas_view_origin_y + y) {
-                    DrawRectangleLinesEx(Rectangle {
+                    DrawRectangleLinesEx({
                         window_view_origin.x + x * scale, window_view_origin.y + y * scale,
                         scale, scale
                     }, 1.5f, BLACK);

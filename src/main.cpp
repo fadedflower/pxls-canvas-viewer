@@ -5,73 +5,39 @@
 #include "PxlsCanvas.h"
 #include "PxlsOverlay.h"
 
-constexpr unsigned SCREEN_WIDTH = 1024;
-constexpr unsigned SCREEN_HEIGHT = 768;
+constexpr unsigned SCREEN_WIDTH = 1280;
+constexpr unsigned SCREEN_HEIGHT = 960;
 constexpr unsigned char OVERLAY_ALPHA = 204;
 
-PxlsLogDB db;
-PxlsCanvas canvas;
-PxlsInfoPanel info_panel(SCREEN_WIDTH, SCREEN_HEIGHT);
-
 int main() {
+    PxlsLogDB db;
+    PxlsCanvas canvas;
+    PxlsInfoPanel info_panel(SCREEN_WIDTH, SCREEN_HEIGHT);
+    PxlsPlaybackPanel playback_panel(SCREEN_WIDTH, SCREEN_HEIGHT);
+
     db.OpenLogDB("../log_test/pixels.sanit.logdb");
+    canvas.InitCanvas(db.Width(), db.Height(), SCREEN_WIDTH, SCREEN_HEIGHT);
+    canvas.LoadPaletteFromJson("../log_test/palette.json");
+
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Pxls Canvas Viewer");
     SetTargetFPS(60);
     // load style if it exists
     if (std::filesystem::exists("style.rgs") && !std::filesystem::is_directory("style.rgs"))
         GuiLoadStyle("style.rgs");
     // patch background color to introduce transparency
-    auto gui_background_color = GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR));
-    gui_background_color.a = OVERLAY_ALPHA;
+    const auto gui_background_color = Fade(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)), 0.8);
     GuiSetStyle(DEFAULT, BACKGROUND_COLOR, ColorToInt(gui_background_color));
 
-    canvas.InitCanvas(db.Width(), db.Height(), SCREEN_WIDTH, SCREEN_HEIGHT);
-    canvas.LoadPaletteFromJson("../log_test/palette.json");
-    db.QueryRecords(20000,
-        [](std::string date, std::string hash, unsigned x, unsigned y,
-        unsigned color_index, std::string action, QueryDirection direction) {
-            if (direction == FORWARD)
-                canvas.PerformAction(x, y, date, action, hash, color_index, REDO);
-            else
-                canvas.PerformAction(x, y, date, action, hash, color_index, UNDO);
-    });
     while (!WindowShouldClose())
     {
         BeginDrawing();
-        // respond to mouse input and render canvas
-        canvas.Scale(canvas.Scale() + GetMouseWheelMove() / 3.0f);
-        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-            SetMouseCursor(MOUSE_CURSOR_RESIZE_ALL);
-            auto mouse_move_delta = GetMouseDelta();
-            mouse_move_delta = { mouse_move_delta.x / canvas.Scale(), mouse_move_delta.y / canvas.Scale()};
-            auto view_center = canvas.ViewCenter();
-            canvas.ViewCenter(Vector2 { view_center.x - mouse_move_delta.x, view_center.y - mouse_move_delta.y });
-        }
-        else {
-            SetMouseCursor(MOUSE_CURSOR_DEFAULT);
-        }
-        // highlight selected pixel
-        unsigned highlight_x, highlight_y;
-        if (canvas.GetNearestPixelPos(GetMousePosition(), highlight_x, highlight_y))
-            canvas.Highlight(highlight_x, highlight_y);
-        else
-            canvas.DeHighlight();
+        // render canvas
         canvas.Render();
         // render overlay
-        PxlsCursorOverlay::Render(canvas, db);
-        info_panel.Render(canvas, db);
-
+        PxlsCursorOverlay::Render(canvas);
+        info_panel.Render(canvas);
+        playback_panel.Render(db, canvas);
         EndDrawing();
-        // if (db.Seek() < db.RecordCount()) {
-        //     db.QueryRecords(std::min(db.Seek() + 100, db.RecordCount()),
-        //         [](std::string date, std::string hash, unsigned x, unsigned y,
-        //         unsigned color_index, std::string action, QueryDirection direction) {
-        //             if (direction == FORWARD)
-        //                 canvas.PerformAction(x, y, date, action, hash, color_index, REDO);
-        //             else
-        //                 canvas.PerformAction(x, y, date, action, hash, color_index, UNDO);
-        //     });
-        // }
     }
     CloseWindow();
     return 0;

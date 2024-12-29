@@ -8,9 +8,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Dependencies
 add_executable(${PROJECT_NAME}
-        src/main.cpp
         src/PxlsLogDB.cpp
         src/PxlsCanvas.cpp
+        src/PxlsOverlay.cpp
+        src/main.cpp
 )
 #set(raylib_VERBOSE 1)
 add_subdirectory(third_party/raylib)
