@@ -4,11 +4,6 @@
 
 #include "PxlsCanvas.h"
 
-const Color PxlsCanvas::BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
-const Color PxlsCanvas::FALLBACK_PIXEL_COLOR { WHITE };
-const float PxlsCanvas::MAX_SCALE = 50.0f;
-const float PxlsCanvas::MIN_SCALE = 1.0f;
-
 bool PxlsCanvas::LoadPaletteFromJson(const std::string &filename) {
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
     std::ifstream palette_file(filename);

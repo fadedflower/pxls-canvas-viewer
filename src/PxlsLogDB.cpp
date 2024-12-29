@@ -15,7 +15,7 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
     sqlite3 *new_log_db = nullptr;
     if (sqlite3_open_v2(db_path.c_str(), &new_log_db,
         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr) != SQLITE_OK) return false;
-    // enable foreign kes
+    // enable foreign keys
     if (sqlite3_exec(new_log_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr) != SQLITE_OK) {
         sqlite3_close(new_log_db);
         std::filesystem::remove(db_path);
@@ -122,6 +122,11 @@ bool PxlsLogDB::OpenLogDB(const std::string &filename) {
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
     if (sqlite3_open_v2(filename.c_str(), &log_db,
         SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) return false;
+    // enable foreign keys
+    if (sqlite3_exec(log_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        CloseLogDB();
+        return false;
+    }
     if (!QueryLogDBMetadata()) {
         CloseLogDB();
         return false;

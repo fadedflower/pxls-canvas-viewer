@@ -9,40 +9,51 @@
 //===========================PxlsDialog===========================
 std::optional<unsigned> PxlsDialog::current_token { std::nullopt };
 std::array<char, 256> PxlsDialog::input_buf {};
-const Vector2 PxlsDialog::TEXT_INPUT_BOX_DIMENSION { 350.0f, 150.0f };
-const Color PxlsDialog::DIALOG_BACKGROUND_COLOR = Fade(BLACK, 0.6f);
 
-bool PxlsDialog::TextInputBox(const unsigned window_w, const unsigned window_h, unsigned dialog_token, const std::string &title,
-        const std::string &message, std::string &input_text) {
-    if (current_token && current_token != dialog_token) return false;
-    if (!current_token) {
-        // acquire token and init input_buf
-        current_token = dialog_token;
-        input_buf.fill('\0');
-    }
-    DrawRectangleRec({ 0.0f, 0.0f, static_cast<float>(window_w), static_cast<float>(window_h)}, DIALOG_BACKGROUND_COLOR);
-    const auto button_result = GuiTextInputBox({
-        window_w / 2 - TEXT_INPUT_BOX_DIMENSION.x / 2,
-        window_h / 2 - TEXT_INPUT_BOX_DIMENSION.y / 2,
+bool PxlsDialog::AcquireToken(const unsigned dialog_token) {
+    if (current_token) return false;
+    input_buf.fill('\0');
+    current_token = dialog_token;
+    return true;
+}
+
+bool PxlsDialog::ReleaseToken(const unsigned dialog_token) {
+    if (!CheckToken(dialog_token)) return false;
+    // release token
+    current_token = std::nullopt;
+    return true;
+}
+
+bool PxlsDialog::TextInputBox(const unsigned window_w, const unsigned window_h, const unsigned dialog_token, const std::string &title,
+                              const std::string &message, std::string &input_text, int &button_result) {
+    if (!CheckToken(dialog_token)) return false;
+    DrawDialogBackground(window_w, window_h);
+    button_result = GuiTextInputBox({
+        (window_w - TEXT_INPUT_BOX_DIMENSION.x) / 2,
+        (window_h - TEXT_INPUT_BOX_DIMENSION.y) / 2,
         TEXT_INPUT_BOX_DIMENSION.x,
         TEXT_INPUT_BOX_DIMENSION.y},
         title.c_str(), message.c_str(), "OK;Cancel", input_buf.data(), 255, nullptr);
     if (button_result == 1)
         input_text = input_buf.data();
-    if (button_result != -1) {
-        // release token
-        current_token = std::nullopt;
-    }
+    return true;
+}
+
+bool PxlsDialog::PendingBox(const unsigned window_w, const unsigned window_h, const unsigned dialog_token, const std::string &message) {
+    if (!CheckToken(dialog_token)) return false;
+    const Rectangle panel_rect { window_w / 2 - PENDING_BOX_DIMENSION.x / 2, window_h / 2 - PENDING_BOX_DIMENSION.y / 2,
+        PENDING_BOX_DIMENSION.x, PENDING_BOX_DIMENSION.y};
+    DrawDialogBackground(window_w, window_h);
+    GuiPanel(panel_rect, nullptr);
+    GuiLabel({
+        panel_rect.x + (panel_rect.width - GetTextWidth(message.c_str())) / 2,
+        panel_rect.y + (panel_rect.height - 15) / 2,
+        static_cast<float>(GetTextWidth(message.c_str())),
+        15 }, message.c_str());
     return true;
 }
 
 //===========================PxlsInfoPanel===========================
-const Vector2 PxlsInfoPanel::NORMAL_DIMENSION { 190.0f, 60.0f };
-const Vector2 PxlsInfoPanel::EXPAND_DIMENSION { 460.0f, 140.0f };
-const float PxlsInfoPanel::LEFT_MARGIN = 10.0f;
-const float PxlsInfoPanel::BOTTOM_MARGIN = 40.0f;
-const float PxlsInfoPanel::PADDING = 5.0f;
-
 PxlsInfoPanel::PxlsInfoPanel(const unsigned window_w, const unsigned window_h) {
     window_width = window_w; window_height = window_h;
 }
@@ -66,6 +77,10 @@ void PxlsInfoPanel::Render(const PxlsCanvas &canvas) {
             NORMAL_DIMENSION.x, NORMAL_DIMENSION.y };
     // render panel gui
     GuiPanel(panel_rect, nullptr);
+    if (PxlsDialog::CurrentToken() == PxlsPlaybackPanel::CANVAS_FUTURE_TOKEN) {
+        GuiLabel(NextControlBounds(), "Pending changes");
+        return;
+    }
     unsigned canvas_x, canvas_y;
     if (canvas.GetNearestPixelPos(GetMousePosition(), canvas_x, canvas_y)) {
         auto color = canvas.GetPaletteColor(canvas.Canvas()[canvas_x][canvas_y].color_index);
@@ -103,9 +118,8 @@ void PxlsInfoPanel::Render(const PxlsCanvas &canvas) {
 }
 
 //===========================PxlsCursorOverlay===========================
-const Rectangle PxlsCursorOverlay::OVERLAY_OFFSET { 15, 20, 30, 30 };
-
 void PxlsCursorOverlay::Render(const PxlsCanvas &canvas) {
+    if (PxlsDialog::CurrentToken() == PxlsPlaybackPanel::CANVAS_FUTURE_TOKEN) return;
     const auto mouse_pos = GetMousePosition();
     unsigned canvas_x, canvas_y;
     if (canvas.GetNearestPixelPos(mouse_pos, canvas_x, canvas_y)) {
@@ -124,13 +138,6 @@ void PxlsCursorOverlay::Render(const PxlsCanvas &canvas) {
 }
 
 //===========================PxlsPlaybackPanel===========================
-const float PxlsPlaybackPanel::PANEL_HEIGHT = 23.0f;
-const float PxlsPlaybackPanel::HEAD_LABEL_MIN_WIDTH = 120.0f;
-const float PxlsPlaybackPanel::SPEED_LABEL_MIN_WIDTH = 70.0f;
-const float PxlsPlaybackPanel::PLAYBACK_BTN_WIDTH = 15.0f;
-const float PxlsPlaybackPanel::MARGIN = 10.0f;
-const float PxlsPlaybackPanel::CONTROL_GAP = 5.0f;
-
 PxlsPlaybackPanel::PxlsPlaybackPanel(const unsigned window_w, const unsigned window_h) {
     window_width = window_w; window_height = window_h;
 }
@@ -146,6 +153,7 @@ void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
         control_x += width + CONTROL_GAP;
         return next_rect;
     };
+
     // render panel gui
     GuiPanel(progress_panel_rect, nullptr);
     // jump to beginning button
@@ -163,68 +171,81 @@ void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
     // jump to end button
     if (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_NEXT, nullptr)) && !PxlsDialog::IsDialogOpen())
         playback_head = db.RecordCount();
+
+    int button_result;
     // playback speed label
     const auto speed_label_str = std::format("{} rec/f", playback_speed);
-    std::string speed_value_str;
-    bool show_playback_speed_dialog = false;
     if (GuiLabelButton(NextControlBounds(std::max(SPEED_LABEL_MIN_WIDTH, static_cast<float>(GetTextWidth(speed_label_str.c_str())))),
-        speed_label_str.c_str())) {
-        // try to open the dialog
-        PlaybackSpeedInputDialog(speed_value_str);
-    } else if (PxlsDialog::CurrentToken() == 0)
-        show_playback_speed_dialog = true;
+        speed_label_str.c_str()) && PxlsDialog::CurrentToken() != PLAYBACK_SPEED_TOKEN) {
+        // try to acquire the dialog token
+        PxlsDialog::AcquireToken(PLAYBACK_SPEED_TOKEN);
+    }
+
     // head label
     const auto head_label_str = std::format("{} / {}", db.Seek(), db.RecordCount());
-    std::string head_value_str;
-    bool show_playback_head_dialog = false;
     if (GuiLabelButton(NextControlBounds(std::max(HEAD_LABEL_MIN_WIDTH, static_cast<float>(GetTextWidth(head_label_str.c_str())))),
-        head_label_str.c_str())) {
-        // try to open the dialog
-        PlaybackHeadInputDialog(head_value_str, db);
-    } else if (PxlsDialog::CurrentToken() == 1)
-        show_playback_head_dialog = true;
+        head_label_str.c_str()) && PxlsDialog::CurrentToken() != PLAYBACK_HEAD_TOKEN) {
+        // try to acquire the dialog token
+        PxlsDialog::AcquireToken(PLAYBACK_HEAD_TOKEN);
+    }
+
     // progress bar
     float playback_head_raw = playback_head;
     GuiSliderBar(NextControlBounds(progress_panel_rect.width - control_x),
         nullptr, nullptr, &playback_head_raw, 0.0f, db.RecordCount());
     if (!PxlsDialog::IsDialogOpen())
         playback_head = std::floorf(playback_head_raw);
-    if (show_playback_speed_dialog) {
+    // render all kinds of dialog
+    if (PxlsDialog::CurrentToken() == PLAYBACK_SPEED_TOKEN) {
+        std::string speed_value_str;
         // render the dialog as long as the dialog is open
-        PlaybackSpeedInputDialog(speed_value_str);
-        if (!speed_value_str.empty()) {
+        PxlsDialog::TextInputBox(window_width, window_height, 0, "Set playback speed",
+                                        "Input playback speed(-10000 - 10000 rec/f):", speed_value_str, button_result);
+        if (button_result == 1) {
             try {
                 if (const auto pb_speed = std::stoi(speed_value_str); pb_speed != 0)
                     playback_speed = std::clamp(pb_speed, -10000, 10000);
             } catch (std::invalid_argument&) {}
         }
+        if (button_result != -1)
+            PxlsDialog::ReleaseToken(0);
     }
-    if (show_playback_head_dialog) {
+
+    if (PxlsDialog::CurrentToken() == PLAYBACK_HEAD_TOKEN) {
+        std::string head_value_str;
         // render the dialog as long as the dialog is open
-        PlaybackHeadInputDialog(head_value_str, db);
-        if (!head_value_str.empty()) {
+        PxlsDialog::TextInputBox(window_width, window_height, 1, "Set playback head",
+                                        std::format("Input playback head(0 - {}):", db.RecordCount()), head_value_str, button_result);
+        if (button_result == 1) {
             try {
                 playback_head = std::clamp(std::stoul(head_value_str), 0ul, db.RecordCount());
             } catch (std::invalid_argument&) {}
         }
+        if (button_result != -1)
+            PxlsDialog::ReleaseToken(1);
     }
 
-    // do playback and update canvas
-    if (playback_head != db.Seek())
-        UpdateCanvas(playback_head, db, canvas);
-    if (playback_state == PLAY) {
-        // loop playback
-        if (db.Seek() == db.RecordCount() && playback_speed > 0)
-            UpdateCanvas(0, db, canvas);
-        else if (db.Seek() == 0 && playback_speed < 0)
-            UpdateCanvas(db.Seek() == db.RecordCount(), db, canvas);
-        else
-            UpdateCanvas(std::clamp(static_cast<long long>(db.Seek()) + playback_speed, 0ll, static_cast<long long>(db.RecordCount())), db, canvas);
-        // pause when the playback head reaches the end
-        if ((db.Seek() == 0 && playback_speed < 0) || (db.Seek() == db.RecordCount() && playback_speed > 0))
-            playback_state = PAUSE;
+    if (PxlsDialog::CurrentToken() == CANVAS_FUTURE_TOKEN)
+        PxlsDialog::PendingBox(window_width, window_height, CANVAS_FUTURE_TOKEN, "Updating canvas, please wait...");
+    // wait for the update process to finish before doing the next canvas update
+    if (!IsCanvasUpdating()) {
+        // do playback and update canvas
+        if (playback_head != db.Seek())
+            UpdateCanvas(playback_head, db, canvas);
+        else if (playback_state == PLAY) {
+            // loop playback
+            if (db.Seek() == db.RecordCount() && playback_speed > 0)
+                UpdateCanvas(0, db, canvas);
+            else if (db.Seek() == 0 && playback_speed < 0)
+                UpdateCanvas(db.RecordCount(), db, canvas);
+            else
+                UpdateCanvas(std::clamp(static_cast<long long>(db.Seek()) + playback_speed, 0ll, static_cast<long long>(db.RecordCount())), db, canvas);
+            // pause when the playback head reaches the end
+            if ((db.Seek() == 0 && playback_speed < 0) || (db.Seek() == db.RecordCount() && playback_speed > 0))
+                playback_state = PAUSE;
+        }
+        playback_head = db.Seek();
     }
-    playback_head = db.Seek();
 }
 
 void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas) {
@@ -233,13 +254,31 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
         canvas.ClearCanvas();
         db.Seek(0);
     } else {
-        db.QueryRecords(pb_head, [&](const std::optional<std::string> &date, const std::optional<std::string> &hash,
-            const unsigned x, const unsigned y, const std::optional<unsigned> color_index, const std::optional<std::string> &action, const QueryDirection direction) {
-            if (direction == FORWARD) {
-                canvas.PerformAction(x, y, REDO, date, action, hash, color_index);
-            } else {
-                canvas.PerformAction(x, y, UNDO, date, action, hash, color_index);
-            }
-        });
+        if (std::abs(static_cast<long long>(db.Seek()) - pb_head) > ASYNC_PROCESS_THRESHOLD) {
+            // enable async processing to prevent gui from freezing for a long time
+            PxlsDialog::AcquireToken(CANVAS_FUTURE_TOKEN);
+            canvas_future = std::async([&] {
+                db.QueryRecords(pb_head, [&](const std::optional<std::string> &date, const std::optional<std::string> &hash,
+                    const unsigned x, const unsigned y, const std::optional<unsigned> color_index, const std::optional<std::string> &action, const QueryDirection direction) {
+                    if (direction == FORWARD) {
+                        canvas.PerformAction(x, y, REDO, date, action, hash, color_index);
+                    } else {
+                        canvas.PerformAction(x, y, UNDO, date, action, hash, color_index);
+                    }
+                });
+                PxlsDialog::ReleaseToken(CANVAS_FUTURE_TOKEN);
+                playback_head = db.Seek();
+            });
+        } else {
+            // use usual sync processing to prevent pending box from showing frequently
+            db.QueryRecords(pb_head, [&](const std::optional<std::string> &date, const std::optional<std::string> &hash,
+                const unsigned x, const unsigned y, const std::optional<unsigned> color_index, const std::optional<std::string> &action, const QueryDirection direction) {
+                if (direction == FORWARD) {
+                    canvas.PerformAction(x, y, REDO, date, action, hash, color_index);
+                } else {
+                    canvas.PerformAction(x, y, UNDO, date, action, hash, color_index);
+                }
+            });
+        }
     }
 }

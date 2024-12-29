@@ -31,8 +31,11 @@ int main() {
     while (!WindowShouldClose())
     {
         BeginDrawing();
-        // render canvas
-        canvas.Render();
+        // render canvas only if the canvas is not updating
+        if (playback_panel.IsCanvasUpdating())
+            ClearBackground(PxlsCanvas::BACKGROUND_COLOR);
+        else
+            canvas.Render();
         // render overlay
         PxlsCursorOverlay::Render(canvas);
         info_panel.Render(canvas);

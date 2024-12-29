@@ -8,6 +8,7 @@
 #include <array>
 #include <optional>
 #include <format>
+#include <future>
 #include "raylib.h"
 #include "raygui.h"
 #include "PxlsCanvas.h"
@@ -15,20 +16,33 @@
 
 class PxlsDialog {
 public:
-    // show TextInputBox, return false if it is occupied by others
+    // acquire/release dialog token
+    static bool AcquireToken(unsigned dialog_token);
+    static bool ReleaseToken(unsigned dialog_token);
+    // show TextInputBox, acquire a dialog token before calling it
     static bool TextInputBox(unsigned window_w, unsigned window_h, unsigned dialog_token, const std::string &title,
-        const std::string &message, std::string &input_text);
-    // is dialog open
+                             const std::string &message, std::string &input_text, int &button_result);
+    // show PendingBox, acquire a dialog token before calling it
+    static bool PendingBox(unsigned window_w, unsigned window_h, unsigned dialog_token, const std::string &message);
+    // is a dialog open
     static bool IsDialogOpen() { return current_token.has_value(); }
     static const std::optional<unsigned>& CurrentToken() { return current_token; }
 private:
+    // check if a dialog token is in use
+    static bool CheckToken(const unsigned dialog_token) { return current_token && current_token == dialog_token; }
+    // draw dialog background
+    static void DrawDialogBackground(const unsigned window_w, const unsigned window_h) {
+        DrawRectangleRec({ 0.0f, 0.0f, static_cast<float>(window_w), static_cast<float>(window_h)}, DIALOG_BACKGROUND_COLOR);
+    }
     // current dialog token, used for preventing opening multiple dialogs
     static std::optional<unsigned> current_token;
     static std::array<char, 256> input_buf;
     // the dimension of text input box
-    const static Vector2 TEXT_INPUT_BOX_DIMENSION;
+    static constexpr Vector2 TEXT_INPUT_BOX_DIMENSION { 350.0f, 150.0f };
+    // the dimension of pending box
+    static constexpr Vector2 PENDING_BOX_DIMENSION { 225.0f, 50.0f };
     // the background color when the dialog shows
-    const static Color DIALOG_BACKGROUND_COLOR;
+    static constexpr Color DIALOG_BACKGROUND_COLOR { 0, 0, 0, 153 };
 };
 
 class PxlsInfoPanel {
@@ -40,15 +54,15 @@ private:
     // is panel expanded
     bool is_expanded = false;
     // window dimension
-    unsigned window_width = 0, window_height = 0;
+    unsigned window_width { 0 }, window_height { 0 };
     // the dimension of normal panel
-    const static Vector2 NORMAL_DIMENSION;
+    static constexpr Vector2 NORMAL_DIMENSION { 190.0f, 60.0f };
     // the dimension of expanded panel
-    const static Vector2 EXPAND_DIMENSION;
+    static constexpr Vector2 EXPAND_DIMENSION { 460.0f, 140.0f };
     // the margin and padding of panel
-    const static float LEFT_MARGIN;
-    const static float BOTTOM_MARGIN;
-    const static float PADDING;
+    static constexpr float LEFT_MARGIN { 10.0f };
+    static constexpr float BOTTOM_MARGIN { 40.0f };
+    static constexpr float PADDING { 5.0f };
 };
 
 class PxlsCursorOverlay {
@@ -57,7 +71,7 @@ public:
     static void Render(const PxlsCanvas &canvas);
 private:
     // overlay dimension and offset relative to mouse cursor
-    const static Rectangle OVERLAY_OFFSET;
+    static constexpr Rectangle OVERLAY_OFFSET { 15, 20, 30, 30 };
 };
 
 enum PlaybackState { PLAY, PAUSE };
@@ -68,38 +82,42 @@ public:
     PxlsPlaybackPanel(unsigned window_w, unsigned window_h);
     // render playback panel using raylib and raygui and perform playback operation
     void Render(PxlsLogDB &db, PxlsCanvas &canvas);
+    // check if the canvas is updating by checking canvas_future
+    bool IsCanvasUpdating() const {
+        return canvas_future.valid() &&
+            canvas_future.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+    }
+    // dialog tokens
+    static constexpr unsigned PLAYBACK_SPEED_TOKEN { 0 };
+    static constexpr unsigned PLAYBACK_HEAD_TOKEN { 1 };
+    static constexpr unsigned CANVAS_FUTURE_TOKEN { 2 };
 private:
-    // input dialogs
-    bool PlaybackSpeedInputDialog(std::string &playback_speed_str) const {
-        return PxlsDialog::TextInputBox(window_width, window_height, 0, "Set playback speed",
-            "Input playback speed(-10000 - 10000 rec/f):", playback_speed_str);
-    }
-    bool PlaybackHeadInputDialog(std::string &playback_head_str, const PxlsLogDB &db) const {
-        return PxlsDialog::TextInputBox(window_width, window_height, 1, "Set playback head",
-            std::format("Input playback head(0 - {}):", db.RecordCount()), playback_head_str);
-    }
     // update canvas according to playback head
-    static void UpdateCanvas(unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas);
+    void UpdateCanvas(unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas);
     // window dimension
-    unsigned window_width = 0, window_height = 0;
+    unsigned window_width { 0 }, window_height { 0 };
     // playback state
-    PlaybackState playback_state = PAUSE;
+    PlaybackState playback_state { PAUSE };
     // playback head
-    unsigned long playback_head = 0;
+    unsigned long playback_head { 0 };
     // playback speed
-    int playback_speed = 100;
+    int playback_speed { 100 };
+    // the future of updating canvas
+    std::future<void> canvas_future;
     // playback panel height
-    const static float PANEL_HEIGHT;
+    static constexpr float PANEL_HEIGHT { 23.0f };
     // progress label minimum width
-    const static float HEAD_LABEL_MIN_WIDTH;
+    static constexpr float HEAD_LABEL_MIN_WIDTH { 120.0f };
     // playback speed label minimum width
-    const static float SPEED_LABEL_MIN_WIDTH;
+    static constexpr float SPEED_LABEL_MIN_WIDTH { 70.0f };
     // playback button width
-    const static float PLAYBACK_BTN_WIDTH;
+    static constexpr float PLAYBACK_BTN_WIDTH { 15.0f };
     // the margin of panel
-    const static float MARGIN;
+    static constexpr float MARGIN { 10.0f };
     // the horizontal gap of controls
-    const static float CONTROL_GAP;
+    static constexpr float CONTROL_GAP { 5.0f };
+    // the threshold of absolute id difference that should be reached before using async method
+    static constexpr unsigned ASYNC_PROCESS_THRESHOLD { 70000 };
 };
 
 #endif //PXLSOVERLAY_H

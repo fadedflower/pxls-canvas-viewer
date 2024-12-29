@@ -69,12 +69,12 @@ public:
     // render canvas using raylib
     void Render();
     // background color of the canvas
-    const static Color BACKGROUND_COLOR;
+    static constexpr Color BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
     // pixel color used when the palette is empty or the color index is out of range
-    const static Color FALLBACK_PIXEL_COLOR;
+    static constexpr Color FALLBACK_PIXEL_COLOR { WHITE };
     // scale limit
-    const static float MAX_SCALE;
-    const static float MIN_SCALE;
+    static constexpr float MAX_SCALE { 50.0f };
+    static constexpr float MIN_SCALE { 1.0f };
 private:
     // palette
     std::vector<PxlsCanvasColor> palette;
