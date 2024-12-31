@@ -5,10 +5,9 @@
 #include "PxlsLogDB.h"
 
 bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
-    CloseLogDB();
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
     std::ifstream file(filename);
-    auto db_path = std::filesystem::path(filename).replace_extension("logdb").generic_string();
+    auto db_path = std::filesystem::path(filename).replace_extension("logdb").string();
     // delete old logdb and reconstruct it
     if (std::filesystem::exists(db_path) && !std::filesystem::is_directory(db_path))
         std::filesystem::remove(db_path);
@@ -118,15 +117,17 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
 }
 
 bool PxlsLogDB::OpenLogDB(const std::string &filename) {
-    CloseLogDB();
     if (!std::filesystem::exists(filename) || std::filesystem::is_directory(filename)) return false;
-    if (sqlite3_open_v2(filename.c_str(), &log_db,
+    sqlite3 *new_log_db = nullptr;
+    if (sqlite3_open_v2(filename.c_str(), &new_log_db,
         SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) return false;
     // enable foreign keys
-    if (sqlite3_exec(log_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr) != SQLITE_OK) {
-        CloseLogDB();
+    if (sqlite3_exec(new_log_db, "PRAGMA foreign_keys = ON;", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        sqlite3_close(new_log_db);
         return false;
     }
+    CloseLogDB();
+    log_db = new_log_db;
     if (!QueryLogDBMetadata()) {
         CloseLogDB();
         return false;
@@ -157,18 +158,18 @@ bool PxlsLogDB::QueryLogDBMetadata() {
     return true;
 }
 
-bool PxlsLogDB::QueryRecords(unsigned long dest_id, record_query_callback callback) {
+bool PxlsLogDB::QueryRecords(unsigned long dest_id, RecordQueryCallback callback) {
 
-    if (dest_id > db_record_count) return false;
+    if (!log_db || dest_id > db_record_count) return false;
     if (callback == nullptr || dest_id == current_id) {
         current_id = dest_id;
         return true;
     }
     if (dest_id > current_id) {
-        std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
+        const std::string sql = std::format("SELECT date,hash,x,y,color_index,action "
                                     "FROM log WHERE id > {} and id <= {};", current_id, dest_id);
         if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
-            (*static_cast<record_query_callback*>(cb))(
+            (*static_cast<RecordQueryCallback*>(cb))(
                 argv[0],
                 argv[1],
                 std::stoul(argv[2]),
@@ -181,11 +182,11 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, record_query_callback callba
         }, &callback, nullptr) != SQLITE_OK)
             return false;
     } else {
-        std::string sql = std::format("SELECT prev_log.date,prev_log.hash,cur_log.x,cur_log.y,prev_log.color_index,prev_log.action "
+        const std::string sql = std::format("SELECT prev_log.date,prev_log.hash,cur_log.x,cur_log.y,prev_log.color_index,prev_log.action "
                                     "FROM log cur_log LEFT JOIN log prev_log ON cur_log.prev_id = prev_log.id "
                                     "WHERE cur_log.id > {} and cur_log.id <= {} ORDER BY cur_log.id DESC;", dest_id, current_id);
         if (sqlite3_exec(log_db, sql.c_str(), [](void* cb, int, char **argv, char**) -> int {
-            (*static_cast<record_query_callback*>(cb))(
+            (*static_cast<RecordQueryCallback*>(cb))(
                 argv[0] ? std::make_optional(argv[0]) : std::nullopt,
                 argv[1] ? std::make_optional(argv[1]) : std::nullopt,
                 std::stoul(argv[2]),
@@ -202,8 +203,8 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, record_query_callback callba
     return true;
 }
 
-bool PxlsLogDB::Seek(unsigned long id) {
-    if (id > db_record_count) return false;
+bool PxlsLogDB::Seek(const unsigned long id) {
+    if (!log_db || id > db_record_count) return false;
     current_id = id;
     return true;
 }

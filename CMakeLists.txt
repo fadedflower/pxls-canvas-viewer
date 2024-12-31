@@ -12,6 +12,7 @@ add_executable(${PROJECT_NAME}
         src/PxlsCanvas.cpp
         src/PxlsOverlay.cpp
         src/main.cpp
+        third_party/tinyfiledialogs/tinyfiledialogs.c
 )
 #set(raylib_VERBOSE 1)
 add_subdirectory(third_party/raylib)
@@ -34,8 +35,10 @@ add_subdirectory(third_party/date)
 target_link_libraries(${PROJECT_NAME} PRIVATE date)
 
 include_directories(third_party/raygui/src)
-# copy dark style file
+include_directories(third_party/tinyfiledialogs)
+# copy necessary resources
 file(COPY_FILE ${CMAKE_SOURCE_DIR}/third_party/raygui/styles/dark/style_dark.rgs ${CMAKE_BINARY_DIR}/style.rgs)
+file(COPY_FILE ${CMAKE_SOURCE_DIR}/resources/palette.json ${CMAKE_BINARY_DIR}/palette.json)
 
 # Checks if OSX and links appropriate frameworks (Only required on MacOS)
 if (APPLE)

@@ -29,8 +29,8 @@ bool PxlsDialog::TextInputBox(const unsigned window_w, const unsigned window_h, 
     if (!CheckToken(dialog_token)) return false;
     DrawDialogBackground(window_w, window_h);
     button_result = GuiTextInputBox({
-        (window_w - TEXT_INPUT_BOX_DIMENSION.x) / 2,
-        (window_h - TEXT_INPUT_BOX_DIMENSION.y) / 2,
+        (static_cast<float>(window_w) - TEXT_INPUT_BOX_DIMENSION.x) / 2,
+        (static_cast<float>(window_h) - TEXT_INPUT_BOX_DIMENSION.y) / 2,
         TEXT_INPUT_BOX_DIMENSION.x,
         TEXT_INPUT_BOX_DIMENSION.y},
         title.c_str(), message.c_str(), "OK;Cancel", input_buf.data(), 255, nullptr);
@@ -41,15 +41,31 @@ bool PxlsDialog::TextInputBox(const unsigned window_w, const unsigned window_h, 
 
 bool PxlsDialog::PendingBox(const unsigned window_w, const unsigned window_h, const unsigned dialog_token, const std::string &message) {
     if (!CheckToken(dialog_token)) return false;
-    const Rectangle panel_rect { window_w / 2 - PENDING_BOX_DIMENSION.x / 2, window_h / 2 - PENDING_BOX_DIMENSION.y / 2,
-        PENDING_BOX_DIMENSION.x, PENDING_BOX_DIMENSION.y};
+    const auto pending_box_width = GetTextWidth(message.c_str()) + 2 * PENDING_BOX_PADDING;
+    const Rectangle panel_rect {
+        static_cast<float>(window_w) / 2 - pending_box_width / 2,
+        static_cast<float>(window_h) / 2 - PENDING_BOX_HEIGHT / 2,
+        pending_box_width, PENDING_BOX_HEIGHT};
     DrawDialogBackground(window_w, window_h);
     GuiPanel(panel_rect, nullptr);
     GuiLabel({
-        panel_rect.x + (panel_rect.width - GetTextWidth(message.c_str())) / 2,
+        panel_rect.x + PENDING_BOX_PADDING,
         panel_rect.y + (panel_rect.height - 15) / 2,
         static_cast<float>(GetTextWidth(message.c_str())),
         15 }, message.c_str());
+    return true;
+}
+
+bool PxlsDialog::MessageBox(const unsigned window_w, const unsigned window_h, const unsigned dialog_token, const std::string &title,
+                            const std::string &message, int &button_result) {
+    if (!CheckToken(dialog_token)) return false;
+    const auto message_box_width = GetTextWidth(message.c_str()) + 2 * MESSAGE_BOX_PADDING;
+    DrawDialogBackground(window_w, window_h);
+    button_result = GuiMessageBox({
+        static_cast<float>(window_w) / 2 - message_box_width / 2,
+        static_cast<float>(window_h) / 2 - MESSAGE_BOX_HEIGHT / 2,
+        message_box_width, MESSAGE_BOX_HEIGHT
+    }, title.c_str(), message.c_str(), "OK");
     return true;
 }
 
@@ -65,7 +81,7 @@ void PxlsInfoPanel::Render(const PxlsCanvas &canvas) {
     auto NextControlBounds = [&] {
         return Rectangle {
             panel_rect.x + PADDING,
-            panel_rect.y + PADDING + 16 * control_line_index++,
+            panel_rect.y + PADDING + 16.0f * static_cast<float>(control_line_index++),
             panel_rect.width - 2 * PADDING,
             15 };
     };
@@ -106,15 +122,18 @@ void PxlsInfoPanel::Render(const PxlsCanvas &canvas) {
             }
         }
     }
+    // disable expand/collapse button when a dialog is open
+    GuiSetState(PxlsDialog::IsDialogOpen() ? STATE_DISABLED : STATE_NORMAL);
     if (is_expanded) {
         control_line_index = 7;
-        if (GuiLabelButton(NextControlBounds(), GuiIconText(ICON_ARROW_DOWN, "Less details")) && !PxlsDialog::IsDialogOpen())
+        if (GuiLabelButton(NextControlBounds(), GuiIconText(ICON_ARROW_DOWN, "Less details")))
             is_expanded = !is_expanded;
     } else {
         control_line_index = 2;
-        if (GuiLabelButton(NextControlBounds(), GuiIconText(ICON_ARROW_UP, "More details")) && !PxlsDialog::IsDialogOpen())
+        if (GuiLabelButton(NextControlBounds(), GuiIconText(ICON_ARROW_UP, "More details")))
             is_expanded = !is_expanded;
     }
+    GuiSetState(STATE_NORMAL);
 }
 
 //===========================PxlsCursorOverlay===========================
@@ -145,7 +164,7 @@ PxlsPlaybackPanel::PxlsPlaybackPanel(const unsigned window_w, const unsigned win
 void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
     const Rectangle progress_panel_rect = { MARGIN,
         static_cast<float>(window_height) - PANEL_HEIGHT - MARGIN,
-        window_width - 2 * MARGIN, PANEL_HEIGHT };
+        static_cast<float>(window_width) - 2 * MARGIN, PANEL_HEIGHT };
     auto control_x = progress_panel_rect.x + CONTROL_GAP;
     // generate bound rect for the next control
     auto NextControlBounds = [&](const float width) {
@@ -156,20 +175,20 @@ void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
 
     // render panel gui
     GuiPanel(progress_panel_rect, nullptr);
+    // disable playback control when a dialog is open
+    GuiSetState(PxlsDialog::IsDialogOpen() ? STATE_DISABLED : STATE_NORMAL);
     // jump to beginning button
-    if (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PREVIOUS, nullptr)) && !PxlsDialog::IsDialogOpen())
+    if (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PREVIOUS, nullptr)))
         playback_head = 0;
     // playback control button
-    if (playback_state == PLAY &&
-        (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PAUSE, nullptr)) || IsKeyPressed(KEY_SPACE))
-        && !PxlsDialog::IsDialogOpen())
+    if (playback_state == PLAY && !PxlsDialog::IsDialogOpen() &&
+        (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PAUSE, nullptr)) || IsKeyPressed(KEY_SPACE)))
         playback_state = PAUSE;
-    else if (playback_state == PAUSE &&
-        (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PLAY, nullptr)) || IsKeyPressed(KEY_SPACE))
-        && !PxlsDialog::IsDialogOpen())
+    else if (playback_state == PAUSE && !PxlsDialog::IsDialogOpen() &&
+        (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_PLAY, nullptr)) || IsKeyPressed(KEY_SPACE)))
         playback_state = PLAY;
     // jump to end button
-    if (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_NEXT, nullptr)) && !PxlsDialog::IsDialogOpen())
+    if (GuiLabelButton(NextControlBounds(PLAYBACK_BTN_WIDTH), GuiIconText(ICON_PLAYER_NEXT, nullptr)))
         playback_head = db.RecordCount();
 
     int button_result;
@@ -190,11 +209,13 @@ void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
     }
 
     // progress bar
-    float playback_head_raw = playback_head;
+    auto playback_head_raw = static_cast<float>(playback_head);
     GuiSliderBar(NextControlBounds(progress_panel_rect.width - control_x),
-        nullptr, nullptr, &playback_head_raw, 0.0f, db.RecordCount());
+        nullptr, nullptr, &playback_head_raw, 0.0f, static_cast<float>(db.RecordCount()));
     if (!PxlsDialog::IsDialogOpen())
-        playback_head = std::floorf(playback_head_raw);
+        playback_head = static_cast<unsigned long>(std::floorf(playback_head_raw));
+    // revert back to normal
+    GuiSetState(STATE_NORMAL);
     // render all kinds of dialog
     if (PxlsDialog::CurrentToken() == PLAYBACK_SPEED_TOKEN) {
         std::string speed_value_str;
@@ -225,8 +246,12 @@ void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
             PxlsDialog::ReleaseToken(1);
     }
 
-    if (PxlsDialog::CurrentToken() == CANVAS_FUTURE_TOKEN)
-        PxlsDialog::PendingBox(window_width, window_height, CANVAS_FUTURE_TOKEN, "Updating canvas, please wait...");
+    if (PxlsDialog::CurrentToken() == CANVAS_FUTURE_TOKEN) {
+        progress_mutex.lock();
+        PxlsDialog::PendingBox(window_width, window_height, CANVAS_FUTURE_TOKEN,
+            std::format("Updating canvas, please wait... ({} / {})", update_progress, update_progress_total));
+        progress_mutex.unlock();
+    }
     // wait for the update process to finish before doing the next canvas update
     if (!IsCanvasUpdating()) {
         // do playback and update canvas
@@ -256,8 +281,10 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
     } else {
         if (std::abs(static_cast<long long>(db.Seek()) - pb_head) > ASYNC_PROCESS_THRESHOLD) {
             // enable async processing to prevent gui from freezing for a long time
+            update_progress = 0;
+            update_progress_total = std::abs(static_cast<long long>(db.Seek()) - pb_head);
             PxlsDialog::AcquireToken(CANVAS_FUTURE_TOKEN);
-            canvas_future = std::async([&] {
+            canvas_future = std::async([&, pb_head] {
                 db.QueryRecords(pb_head, [&](const std::optional<std::string> &date, const std::optional<std::string> &hash,
                     const unsigned x, const unsigned y, const std::optional<unsigned> color_index, const std::optional<std::string> &action, const QueryDirection direction) {
                     if (direction == FORWARD) {
@@ -265,6 +292,9 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
                     } else {
                         canvas.PerformAction(x, y, UNDO, date, action, hash, color_index);
                     }
+                    progress_mutex.lock();
+                    update_progress++;
+                    progress_mutex.unlock();
                 });
                 PxlsDialog::ReleaseToken(CANVAS_FUTURE_TOKEN);
                 playback_head = db.Seek();
@@ -281,4 +311,29 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
             });
         }
     }
+}
+
+//===========================PxlsToolbar===========================
+void PxlsToolbar::Render(const std::vector<ToolbarItem> &items, const ToolbarCallback &callback) {
+    unsigned btn_x = MARGIN;
+    std::optional<std::string> execute_command { std::nullopt };
+    GuiEnableTooltip();
+    for (const auto &[button_text, button_tooltip, command, disabled, pressed] : items) {
+        // set tooltip if it exists
+        if (button_tooltip)
+            GuiSetTooltip(button_tooltip->c_str());
+        else
+            GuiSetTooltip(nullptr);
+        // disable toolbar button when a dialog is open or disabled == true
+        // set pressed state if pressed == true
+        GuiSetState(PxlsDialog::IsDialogOpen() || disabled ? STATE_DISABLED : pressed ? STATE_PRESSED : STATE_NORMAL);
+        if (GuiButton({ static_cast<float>(btn_x), MARGIN, BTN_WIDTH, BTN_WIDTH }, button_text.c_str()))
+            execute_command = command;
+        btn_x += BTN_WIDTH + BTN_GAP;
+    }
+    GuiDisableTooltip();
+    // revert back to normal
+    GuiSetState(STATE_NORMAL);
+    if (execute_command)
+        callback(*execute_command);
 }

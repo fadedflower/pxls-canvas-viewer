@@ -17,7 +17,7 @@
 #include <boost/algorithm/string.hpp>
 
 enum QueryDirection { FORWARD, BACKWARD };
-using record_query_callback = std::function<void (std::optional<std::string> date, std::optional<std::string> hash,
+using RecordQueryCallback = std::function<void (std::optional<std::string> date, std::optional<std::string> hash,
         unsigned x, unsigned y, std::optional<unsigned> color_index, std::optional<std::string> action, QueryDirection direction)>;
 
 class PxlsLogDB {
@@ -33,11 +33,13 @@ public:
     unsigned Height() const { return db_height; }
     unsigned long RecordCount() const { return db_record_count; }
     // query records, from current_id to dest_id. when querying backwards, it queries the record with prev_id instead
-    bool QueryRecords(unsigned long dest_id, record_query_callback callback);
+    bool QueryRecords(unsigned long dest_id, RecordQueryCallback callback);
     // adjust current id pointer
     bool Seek(unsigned long id);
     // get current id pointer
     unsigned long Seek() const { return current_id; }
+    // is logdb open
+    bool IsOpen() const { return log_db; }
     ~PxlsLogDB();
 private:
     bool QueryLogDBMetadata();

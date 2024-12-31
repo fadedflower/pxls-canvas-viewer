@@ -4,11 +4,14 @@
 
 #ifndef PXLSOVERLAY_H
 #define PXLSOVERLAY_H
+#include <string>
 #include <chrono>
 #include <array>
+#include <vector>
 #include <optional>
 #include <format>
 #include <future>
+#include <mutex>
 #include "raylib.h"
 #include "raygui.h"
 #include "PxlsCanvas.h"
@@ -24,6 +27,9 @@ public:
                              const std::string &message, std::string &input_text, int &button_result);
     // show PendingBox, acquire a dialog token before calling it
     static bool PendingBox(unsigned window_w, unsigned window_h, unsigned dialog_token, const std::string &message);
+    // show MessageBox, acquire a dialog token before calling it
+    static bool MessageBox(unsigned window_w, unsigned window_h, unsigned dialog_token, const std::string &title,
+                            const std::string &message, int &button_result);
     // is a dialog open
     static bool IsDialogOpen() { return current_token.has_value(); }
     static const std::optional<unsigned>& CurrentToken() { return current_token; }
@@ -39,10 +45,16 @@ private:
     static std::array<char, 256> input_buf;
     // the dimension of text input box
     static constexpr Vector2 TEXT_INPUT_BOX_DIMENSION { 350.0f, 150.0f };
-    // the dimension of pending box
-    static constexpr Vector2 PENDING_BOX_DIMENSION { 225.0f, 50.0f };
+    // the height of pending box
+    static constexpr float PENDING_BOX_HEIGHT { 50.0f };
+    // the left and right padding of pending box
+    static constexpr float PENDING_BOX_PADDING { 15.0f };
+    // the height of message box
+    static constexpr float MESSAGE_BOX_HEIGHT { 100.0f };
+    // the left and right padding of message box
+    static constexpr float MESSAGE_BOX_PADDING { 30.0f };
     // the background color when the dialog shows
-    static constexpr Color DIALOG_BACKGROUND_COLOR { 0, 0, 0, 153 };
+    static constexpr Color DIALOG_BACKGROUND_COLOR { 0, 0, 0, 127 };
 };
 
 class PxlsInfoPanel {
@@ -75,7 +87,7 @@ private:
 };
 
 enum PlaybackState { PLAY, PAUSE };
-using playback_callback = std::function<void (unsigned pb_head)>;
+using PlaybackCallback = std::function<void (unsigned pb_head)>;
 
 class PxlsPlaybackPanel {
 public:
@@ -83,9 +95,12 @@ public:
     // render playback panel using raylib and raygui and perform playback operation
     void Render(PxlsLogDB &db, PxlsCanvas &canvas);
     // check if the canvas is updating by checking canvas_future
-    bool IsCanvasUpdating() const {
+    [[nodiscard]] bool IsCanvasUpdating() const {
         return canvas_future.valid() &&
             canvas_future.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
+    }
+    void ResetPlayback() {
+        playback_state = PAUSE; playback_head = 0; playback_speed = 100;
     }
     // dialog tokens
     static constexpr unsigned PLAYBACK_SPEED_TOKEN { 0 };
@@ -104,6 +119,10 @@ private:
     int playback_speed { 100 };
     // the future of updating canvas
     std::future<void> canvas_future;
+    // progress shown while updating canvas
+    unsigned long update_progress { 0 };
+    unsigned long update_progress_total { 0 };
+    std::mutex progress_mutex;
     // playback panel height
     static constexpr float PANEL_HEIGHT { 23.0f };
     // progress label minimum width
@@ -118,6 +137,27 @@ private:
     static constexpr float CONTROL_GAP { 5.0f };
     // the threshold of absolute id difference that should be reached before using async method
     static constexpr unsigned ASYNC_PROCESS_THRESHOLD { 70000 };
+};
+
+struct ToolbarItem {
+    std::string button_text;
+    std::optional<std::string> button_tooltip { std::nullopt };
+    std::string command;
+    bool disabled { false };
+    bool pressed { false };
+};
+using ToolbarCallback = std::function<void (const std::string &command)>;
+
+class PxlsToolbar {
+public:
+    // render toolbar using raylib and execute toolbar commands via callback
+    static void Render(const std::vector<ToolbarItem> &items, const ToolbarCallback &callback);
+private:
+    // toolbar button width
+    static constexpr float BTN_WIDTH { 30.0f };
+    static constexpr float BTN_GAP { 5.0f };
+    // toolbar margin
+    static constexpr float MARGIN { 10.0f };
 };
 
 #endif //PXLSOVERLAY_H

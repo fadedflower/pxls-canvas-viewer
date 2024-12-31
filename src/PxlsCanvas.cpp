@@ -40,6 +40,7 @@ bool PxlsCanvas::InitCanvas(const unsigned canvas_w, const unsigned canvas_h, co
     if (canvas_w == 0 || canvas_h == 0 || window_w == 0 || window_h == 0) return false;
     canvas_width = canvas_w; canvas_height = canvas_h; window_width = window_w; window_height = window_h;
     view_center = { canvas_width / 2.0f, canvas_height / 2.0f };
+    scale = 1.0f;
     ClearCanvas();
     return true;
 }

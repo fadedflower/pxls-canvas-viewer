@@ -5,6 +5,7 @@
 #ifndef PXLSCANVAS_H
 #define PXLSCANVAS_H
 #include <vector>
+#include <string>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -46,21 +47,21 @@ public:
     // clear canvas with virgin pixels
     void ClearCanvas();
     // get readonly access to palette
-    const auto& Palette() const { return palette; }
+    [[nodiscard]] const auto& Palette() const { return palette; }
     // get readonly access to canvas
-    const auto& Canvas() const { return canvas; }
+    [[nodiscard]] const auto& Canvas() const { return canvas; }
     // get palette color by color index
-    Color GetPaletteColor(unsigned color_index) const;
+    [[nodiscard]] Color GetPaletteColor(unsigned color_index) const;
     // get palette color name by color index
-    std::string GetPaletteColorName(unsigned color_index) const;
+    [[nodiscard]] std::string GetPaletteColorName(unsigned color_index) const;
     // perform action on the specified pixel, either redo or undo, return false if out of bounds
     bool PerformAction(unsigned x, unsigned y, ActionDirection direction, std::optional<std::string> time_str,
                     const std::optional<std::string> &action, const std::optional<std::string> &hash, const std::optional<unsigned> &color_index);
     // get/set canvas view
     void ViewCenter(Vector2 center);
-    const Vector2& ViewCenter() const { return view_center; }
+    [[nodiscard]] const Vector2& ViewCenter() const { return view_center; }
     void Scale(float s);
-    float Scale() const { return scale; }
+    [[nodiscard]] float Scale() const { return scale; }
     // highlight and de-highlight a pixel
     bool Highlight(unsigned x, unsigned y);
     void DeHighlight();
@@ -71,7 +72,7 @@ public:
     // background color of the canvas
     static constexpr Color BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
     // pixel color used when the palette is empty or the color index is out of range
-    static constexpr Color FALLBACK_PIXEL_COLOR { WHITE };
+    static constexpr auto FALLBACK_PIXEL_COLOR { WHITE };
     // scale limit
     static constexpr float MAX_SCALE { 50.0f };
     static constexpr float MIN_SCALE { 1.0f };
