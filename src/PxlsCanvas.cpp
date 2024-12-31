@@ -9,28 +9,41 @@ bool PxlsCanvas::LoadPaletteFromJson(const std::string &filename) {
     std::ifstream palette_file(filename);
     json palette_json = json::parse(palette_file, nullptr, false, true);
     // check invalid json
-    if (palette_json.is_discarded() || !palette_json.is_object()) return false;
+    if (palette_json.is_discarded() || !palette_json.is_array()) return false;
     /*
      * palette format
-     * {
-     *     "White": "#FFFFFF",
+     * [
+     *     { "name": "White", "value": "ffffff" },
      *     ...
-     * }
+     * ]
      */
     std::vector<PxlsCanvasColor> new_palette;
-    for (const auto &[name, color] : palette_json.items()) {
-        if (!color.is_string()) return false;
-        auto color_hex = color.get<std::string>();
-        if (color_hex.size() != 7 || color_hex[0] != '#') return false;
+    for (const auto &palette_item : palette_json) {
+        if (!palette_item.contains("name") || !palette_item.contains("value")) return false;
+        if (!palette_item["name"].is_string() || !palette_item["value"].is_string()) return false;
+        std::string color_hex = palette_item["value"];
+        if (color_hex.size() != 6 && color_hex.size() != 7) return false;
         Color palette_color;
         try {
-            palette_color.r = std::stoi(color_hex.substr(1, 2), nullptr, 16);
-            palette_color.g = std::stoi(color_hex.substr(3, 2), nullptr, 16);
-            palette_color.b = std::stoi(color_hex.substr(5, 2), nullptr, 16);
+            // parse color hex code with or without '#'
+            if (color_hex[0] == '#') {
+                palette_color = {
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(1, 2), nullptr, 16)),
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(3, 2), nullptr, 16)),
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(5, 2), nullptr, 16)),
+                    255
+                };
+            } else {
+                palette_color = {
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(0, 2), nullptr, 16)),
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(2, 2), nullptr, 16)),
+                    static_cast<unsigned char>(std::stoi(color_hex.substr(4, 2), nullptr, 16)),
+                    255
+                };
+            }
         }
         catch (std::invalid_argument&) { return false; }
-        palette_color.a = 255;
-        new_palette.push_back({ name, palette_color });
+        new_palette.push_back({ palette_item["name"], palette_color });
     }
     palette = new_palette;
     return true;
