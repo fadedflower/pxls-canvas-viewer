@@ -11,6 +11,7 @@
 #include <chrono>
 #include <sstream>
 #include <optional>
+#include <memory>
 #include "raylib.h"
 #include "nlohmann/json.hpp"
 #include "date/date.h"
@@ -33,6 +34,15 @@ struct PxlsCanvasPixel {
     // last action hash, used to distinguish one user's pixels from others
     std::string last_hash = "<empty>";
     // color index in the palette
+    unsigned color_index { 0 };
+};
+
+// used for storing canvas pixels in the snapshot
+struct PxlsCanvasSnapshotPixel {
+    unsigned manipulate_count { 0 };
+    long long last_time {};
+    char last_action[14] {};
+    char last_hash[65] {};
     unsigned color_index { 0 };
 };
 
@@ -69,6 +79,9 @@ public:
     bool GetNearestPixelPos(Vector2 window_pos, unsigned &canvas_x, unsigned &canvas_y) const;
     // render canvas using raylib
     void Render();
+    // dump/load canvas snapshot
+    bool DumpSnapshot(std::shared_ptr<PxlsCanvasSnapshotPixel[]> &snapshot_blob) const;
+    bool LoadSnapshot(const PxlsCanvasSnapshotPixel *snapshot_blob);
     // background color of the canvas
     static constexpr Color BACKGROUND_COLOR { 0xC5, 0xC5, 0xC5 };
     // pixel color used when the palette is empty or the color index is out of range

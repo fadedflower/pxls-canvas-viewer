@@ -99,9 +99,7 @@ public:
         return canvas_future.valid() &&
             canvas_future.wait_for(std::chrono::seconds(0)) == std::future_status::timeout;
     }
-    void ResetPlayback() {
-        playback_state = PAUSE; playback_head = 0; playback_speed = 100;
-    }
+    bool InitPlayback(const PxlsLogDB &db);
     // dialog tokens
     static constexpr unsigned PLAYBACK_SPEED_TOKEN { 0 };
     static constexpr unsigned PLAYBACK_HEAD_TOKEN { 1 };
@@ -109,6 +107,8 @@ public:
 private:
     // update canvas according to playback head
     void UpdateCanvas(unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas);
+    // load nearest snapshot of the target playback head
+    void JumpToNearestSnapshot(unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas) const;
     // window dimension
     unsigned window_width { 0 }, window_height { 0 };
     // playback state
@@ -117,6 +117,8 @@ private:
     unsigned long playback_head { 0 };
     // playback speed
     int playback_speed { 100 };
+    // snapshot id list
+    std::vector<unsigned long> snapshot_ids;
     // the future of updating canvas
     std::future<void> canvas_future;
     // progress shown while updating canvas

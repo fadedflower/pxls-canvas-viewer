@@ -4,7 +4,7 @@
 
 #ifndef PXLSLOGDB_H
 #define PXLSLOGDB_H
-#include <iostream>
+#include <vector>
 #include <string>
 #include <fstream>
 #include <filesystem>
@@ -19,6 +19,7 @@
 enum QueryDirection { FORWARD, BACKWARD };
 using RecordQueryCallback = std::function<void (std::optional<std::string> date, std::optional<std::string> hash,
         unsigned x, unsigned y, std::optional<unsigned> color_index, std::optional<std::string> action, QueryDirection direction)>;
+using SnapshotQueryCallback = std::function<void (const void* snapshot_blob)>;
 
 class PxlsLogDB {
 public:
@@ -34,6 +35,12 @@ public:
     unsigned long RecordCount() const { return db_record_count; }
     // query records, from current_id to dest_id. when querying backwards, it queries the record with prev_id instead
     bool QueryRecords(unsigned long dest_id, RecordQueryCallback callback);
+    // query snapshot id list
+    bool QuerySnapshotIdList(std::vector<unsigned long> &id_list) const;
+    // query a specified snapshot
+    bool QuerySnapshot(unsigned long id, const SnapshotQueryCallback &callback) const;
+    // create a new snapshot
+    bool CreateSnapshot(unsigned long id, const void *snapshot_blob, int snapshot_bytes) const;
     // adjust current id pointer
     bool Seek(unsigned long id);
     // get current id pointer

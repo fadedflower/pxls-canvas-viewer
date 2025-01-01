@@ -20,18 +20,20 @@ constexpr unsigned RAW_LOG_FUTURE_TOKEN = { 3 };
 constexpr unsigned LOGDB_FUTURE_TOKEN = { 4 };
 constexpr unsigned LOAD_LOG_FAILURE_TOKEN = { 5 };
 constexpr unsigned LOAD_PALETTE_FAILURE_TOKEN = { 6 };
+constexpr unsigned SNAPSHOT_FUTURE_TOKEN = { 7 };
 
 constexpr std::string APP_TITLE { "Pxls Canvas Viewer" };
 constexpr std::array<std::string, 2> required_files { "style.rgs", "palette.json" };
 constexpr std::array log_filter_pattern { "*.log", "*.logdb" };
+constexpr std::array<float, 4> snapshot_proportion { 1.0f / 4.0f, 1.0 / 2.0f, 3.0f / 4.0f, 1.0f };
 std::vector<ToolbarItem> toolbar_items {
-    { GuiIconText(ICON_FILE_OPEN, nullptr), "Load a Pxls log or LogDB", "OPEN_LOG"},
-    { GuiIconText(ICON_BRUSH_PAINTER, nullptr), "Load a palette in JSON format", "OPEN_PALETTE"},
-    {GuiIconText(ICON_FILE_DELETE,nullptr), "Close LogDB", "CLOSE"},
-    { GuiIconText(ICON_FILETYPE_PLAY, nullptr), "Toggle playback panel", "TOGGLE_PLAYBACK", false, true},
-    { GuiIconText(ICON_INFO, nullptr), "Toggle info panel", "TOGGLE_INFO", false, true},
-    { GuiIconText(ICON_CURSOR_POINTER, nullptr), "Toggle cursor overlay", "TOGGLE_CURSOR_OVERLAY", false, true},
-    { GuiIconText(ICON_EXIT, nullptr), "Exit program", "EXIT"}
+    { GuiIconText(ICON_FILE_OPEN, nullptr), "Load a Pxls log or LogDB", "OPEN_LOG" },
+    { GuiIconText(ICON_BRUSH_PAINTER, nullptr), "Load a palette in JSON format", "OPEN_PALETTE" },
+    { GuiIconText(ICON_FILE_DELETE,nullptr), "Close LogDB", "CLOSE" },
+    { GuiIconText(ICON_FILETYPE_PLAY, nullptr), "Toggle playback panel", "TOGGLE_PLAYBACK", false, true },
+    { GuiIconText(ICON_INFO, nullptr), "Toggle info panel", "TOGGLE_INFO", false, true },
+    { GuiIconText(ICON_CURSOR_POINTER, nullptr), "Toggle cursor overlay", "TOGGLE_CURSOR_OVERLAY", false, true },
+    { GuiIconText(ICON_EXIT, nullptr), "Exit program", "EXIT" }
 };
 std::future<void> raw_log_future, logdb_future;
 std::optional<std::string> filename_title { std::nullopt };
@@ -120,8 +122,27 @@ int main() {
                         raw_log_future = std::async([&, file_path, filename] {
                             if (db.OpenLogRaw(file_path)) {
                                 canvas.InitCanvas(db.Width(), db.Height(), SCREEN_WIDTH, SCREEN_HEIGHT);
-                                playback_panel.ResetPlayback();
                                 PxlsDialog::ReleaseToken(RAW_LOG_FUTURE_TOKEN);
+                                PxlsDialog::AcquireToken(SNAPSHOT_FUTURE_TOKEN);
+                                for (const auto &proportion: snapshot_proportion) {
+                                    const unsigned long snapshot_id = std::floorf(db.RecordCount() * proportion);
+                                    std::shared_ptr<PxlsCanvasSnapshotPixel[]> snapshot_blob;
+                                    db.QueryRecords(snapshot_id, [&](const std::optional<std::string> &date, const std::optional<std::string> &hash,
+                                        const unsigned x, const unsigned y, const std::optional<unsigned> color_index, const std::optional<std::string> &action, const QueryDirection direction) {
+                                        if (direction == FORWARD) {
+                                            canvas.PerformAction(x, y, REDO, date, action, hash, color_index);
+                                        } else {
+                                            canvas.PerformAction(x, y, UNDO, date, action, hash, color_index);
+                                        }
+                                    });
+                                    canvas.DumpSnapshot(snapshot_blob);
+                                    if (!db.CreateSnapshot(snapshot_id, snapshot_blob.get(), db.Width() * db.Height() * sizeof(PxlsCanvasSnapshotPixel)))
+                                        break;
+                                }
+                                db.Seek(0);
+                                canvas.ClearCanvas();
+                                playback_panel.InitPlayback(db);
+                                PxlsDialog::ReleaseToken(SNAPSHOT_FUTURE_TOKEN);
                                 // set title
                                 filename_title_mutex.lock();
                                 filename_title = filename;
@@ -130,14 +151,13 @@ int main() {
                                 PxlsDialog::ReleaseToken(RAW_LOG_FUTURE_TOKEN);
                                 PxlsDialog::AcquireToken(LOAD_LOG_FAILURE_TOKEN);
                             }
-
                         });
                     } else {
                         PxlsDialog::AcquireToken(LOGDB_FUTURE_TOKEN);
                         logdb_future = std::async([&, file_path, filename] {
                             if (db.OpenLogDB(file_path)) {
                                 canvas.InitCanvas(db.Width(), db.Height(), SCREEN_WIDTH, SCREEN_HEIGHT);
-                                playback_panel.ResetPlayback();
+                                playback_panel.InitPlayback(db);
                                 PxlsDialog::ReleaseToken(LOGDB_FUTURE_TOKEN);
                                 // set title
                                 filename_title_mutex.lock();
@@ -185,7 +205,9 @@ int main() {
         }
         // render pending box
         PxlsDialog::PendingBox(SCREEN_WIDTH, SCREEN_HEIGHT, RAW_LOG_FUTURE_TOKEN,
-            "Building LogDB... It will take some time, depending on the log size.");
+            "Building LogDB, please wait patiently...");
+        PxlsDialog::PendingBox(SCREEN_WIDTH, SCREEN_HEIGHT, SNAPSHOT_FUTURE_TOKEN,
+            "Creating snapshots to improve playback experience, please wait patiently...");
         PxlsDialog::PendingBox(SCREEN_WIDTH, SCREEN_HEIGHT, LOGDB_FUTURE_TOKEN,
             "Loading LogDB...");
         // render message box

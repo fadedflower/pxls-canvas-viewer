@@ -219,3 +219,36 @@ void PxlsCanvas::Render(){
         }
     }
 }
+
+bool PxlsCanvas::DumpSnapshot(std::shared_ptr<PxlsCanvasSnapshotPixel[]> &snapshot_blob) const {
+    if (canvas_width == 0 || canvas_height == 0) return false;
+    snapshot_blob = std::make_shared<PxlsCanvasSnapshotPixel[]>(canvas_width * canvas_height);
+    unsigned i = 0;
+    for (const auto &col: canvas) {
+        for (const auto &[manipulate_count, last_time, last_action, last_hash, color_index]: col) {
+            snapshot_blob[i] = {
+                manipulate_count, last_time.time_since_epoch().count(), {}, {}, color_index
+            };
+            last_action.copy(snapshot_blob[i].last_action, sizeof(snapshot_blob[i].last_action) - 1);
+            last_hash.copy(snapshot_blob[i].last_hash, sizeof(snapshot_blob[i].last_hash) - 1);
+            i++;
+        }
+    }
+    return true;
+}
+
+bool PxlsCanvas::LoadSnapshot(const PxlsCanvasSnapshotPixel *snapshot_blob) {
+    if (canvas_width == 0 || canvas_height == 0) return false;
+    for (unsigned x = 0; x < canvas_width; x++) {
+        for (unsigned y = 0; y < canvas_height; y++) {
+            canvas[x][y] = {
+                snapshot_blob[x * canvas_height + y].manipulate_count,
+                sys_time_ms { std::chrono::milliseconds(snapshot_blob[x * canvas_height + y].last_time) },
+                snapshot_blob[x * canvas_height + y].last_action,
+                snapshot_blob[x * canvas_height + y].last_hash,
+                snapshot_blob[x * canvas_height + y].color_index
+            };
+        }
+    }
+    return true;
+}

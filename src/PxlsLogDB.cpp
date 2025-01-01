@@ -20,7 +20,7 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
         std::filesystem::remove(db_path);
         return false;
     }
-    // init logdb by creating the log table
+    // init logdb by creating the log table and the snapshot table
     const std::string init_sql  = "CREATE TABLE log("
                             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                             "prev_id INTEGER,"
@@ -31,6 +31,10 @@ bool PxlsLogDB::OpenLogRaw(const std::string &filename) {
                             "color_index INTEGER NOT NULL,"
                             "action TEXT NOT NULL,"
                             "FOREIGN KEY (prev_id) REFERENCES log(id)"
+                            ");"
+                            "CREATE TABLE canvas_snapshot("
+                            "id INTEGER PRIMARY KEY NOT NULL,"
+                            "snapshot BLOB NOT NULL"
                             ");";
     if (sqlite3_exec(new_log_db, init_sql.c_str(), nullptr, nullptr, nullptr) != SQLITE_OK) {
         sqlite3_close(new_log_db);
@@ -200,6 +204,49 @@ bool PxlsLogDB::QueryRecords(unsigned long dest_id, RecordQueryCallback callback
             return false;
     }
     current_id = dest_id;
+    return true;
+}
+
+bool PxlsLogDB::QuerySnapshotIdList(std::vector<unsigned long> &id_list) const {
+    if (!log_db) return false;
+    std::vector<unsigned long> ids;
+    const std::string sql = "SELECT id FROM canvas_snapshot;";
+    if (sqlite3_exec(log_db, sql.c_str(), [](void* ids_ptr, int, char **argv, char**) -> int {
+        static_cast<std::vector<unsigned long> *>(ids_ptr)->push_back(std::stoul(argv[0]));
+        return 0;
+    }, &ids, nullptr) != SQLITE_OK)
+        return false;
+    id_list = ids;
+    return true;
+}
+
+bool PxlsLogDB::QuerySnapshot(unsigned long id, const SnapshotQueryCallback &callback) const {
+    if (!log_db) return false;
+    const std::string sql = std::format("SELECT snapshot FROM canvas_snapshot WHERE id = {};", id);
+    sqlite3_stmt *sql_stmt;
+    sqlite3_prepare_v2(log_db, sql.c_str(), sql.length() + 1, &sql_stmt, nullptr);
+    if (sqlite3_step(sql_stmt) != SQLITE_ROW) {
+        sqlite3_finalize(sql_stmt);
+        return false;
+    }
+    const void *snapshot_blob = sqlite3_column_blob(sql_stmt, 0);
+    callback(snapshot_blob);
+    sqlite3_finalize(sql_stmt);
+    return true;
+}
+
+bool PxlsLogDB::CreateSnapshot(unsigned long id, const void *snapshot_blob, const int snapshot_bytes) const {
+    if (!log_db) return false;
+    const std::string sql = std::format("INSERT INTO canvas_snapshot(id,snapshot) VALUES ({},:sp);", id);
+    sqlite3_stmt *sql_stmt;
+    sqlite3_prepare_v2(log_db, sql.c_str(), -1, &sql_stmt, nullptr);
+    // bind snapshot blob
+    if (sqlite3_bind_blob(sql_stmt, sqlite3_bind_parameter_index(sql_stmt, ":sp"), snapshot_blob, snapshot_bytes, SQLITE_STATIC) != SQLITE_OK ||
+        sqlite3_step(sql_stmt) != SQLITE_DONE) {
+        sqlite3_finalize(sql_stmt);
+        return false;
+    }
+    sqlite3_finalize(sql_stmt);
     return true;
 }
 

@@ -161,6 +161,14 @@ PxlsPlaybackPanel::PxlsPlaybackPanel(const unsigned window_w, const unsigned win
     window_width = window_w; window_height = window_h;
 }
 
+bool PxlsPlaybackPanel::InitPlayback(const PxlsLogDB &db) {
+    if (IsCanvasUpdating()) return false;
+    playback_state = PAUSE; playback_head = 0; playback_speed = 100;
+    db.QuerySnapshotIdList(snapshot_ids);
+    return true;
+}
+
+
 void PxlsPlaybackPanel::Render(PxlsLogDB &db, PxlsCanvas &canvas) {
     const Rectangle progress_panel_rect = { MARGIN,
         static_cast<float>(window_height) - PANEL_HEIGHT - MARGIN,
@@ -279,6 +287,10 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
         canvas.ClearCanvas();
         db.Seek(0);
     } else {
+        // jump to nearest snapshot to improve performance
+        JumpToNearestSnapshot(pb_head, db, canvas);
+        // return if the nearest snapshot id is pb_head itself
+        if (db.Seek() == pb_head) return;
         if (std::abs(static_cast<long long>(db.Seek()) - pb_head) > ASYNC_PROCESS_THRESHOLD) {
             // enable async processing to prevent gui from freezing for a long time
             update_progress = 0;
@@ -310,6 +322,32 @@ void PxlsPlaybackPanel::UpdateCanvas(const unsigned pb_head, PxlsLogDB &db, Pxls
                 }
             });
         }
+    }
+}
+
+void PxlsPlaybackPanel::JumpToNearestSnapshot(const unsigned pb_head, PxlsLogDB &db, PxlsCanvas &canvas) const {
+    unsigned long min_dist = std::abs(static_cast<long long>(db.Seek()) - pb_head);
+    std::optional<unsigned long> snapshot_id { std::nullopt };
+    // regard 0 as a special snapshot id
+    auto snapshot_ids_with_zero = snapshot_ids;
+    snapshot_ids_with_zero.push_back(0);
+    // find nearest snapshot id
+    for (const auto &id: snapshot_ids_with_zero) {
+        if (std::abs(static_cast<long long>(id) - pb_head) < min_dist) {
+            snapshot_id = id;
+            min_dist = std::abs(static_cast<long long>(id) - pb_head);
+        }
+    }
+    if (snapshot_id) {
+        if (*snapshot_id == 0)
+            canvas.ClearCanvas();
+        else {
+            // load snapshot
+            db.QuerySnapshot(*snapshot_id, [&](const void* snapshot_blob) {
+                canvas.LoadSnapshot(static_cast<const PxlsCanvasSnapshotPixel*>(snapshot_blob));
+            });
+        }
+        db.Seek(*snapshot_id);
     }
 }
 
